@@ -181,7 +181,9 @@ La corrección personal tendrá en cuenta la calidad del código entregado y cas
 
 # Ejercicio 1
 
-Para este ejercicio opté por usar un subscript python llamado `generador-compose.py` para facilitar la creación del archivo yaml.
+Para este ejercicio opté por usar un subscript python llamado `generador-compose.py` para facilitar la creación del archivo yaml. El archivo lo creo formateando un yaml de forma manual con strings de python y un ciclo for para iterar sobre la cantidad de clientes que haya ingresado el usuario como parámetro.
+
+Para el docker-compose final, replico las mismas configuraciones del client1 para ser consistente (misma imagen, variables de entorno, etc).
 
 ### Uso
 
