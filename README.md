@@ -185,6 +185,8 @@ Para este ejercicio opté por usar un subscript python llamado `generador-compos
 
 Para el docker-compose final, replico las mismas configuraciones del client1 para ser consistente (misma imagen, variables de entorno, etc).
 
+Además, modifiqué el cliente y el servidor para solucionar los short-write y short-read, y cerrar los sockets para que no queden recursos abiertos al finalizar el programa.
+
 ### Uso
 
 Primero se deben hacer ejecutables ambos scripts:
