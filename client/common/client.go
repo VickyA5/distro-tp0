@@ -62,10 +62,8 @@ func (c *Client) StartClientLoop() {
 			return
 		}
 
-		// TODO: Modify the send to avoid short-write
 		message := fmt.Sprintf("[CLIENT %v] Message N°%v\n", c.config.ID, msgID)
-
-		// Write the complete message avoiding short-writes
+		
 		totalWritten := 0
 		messageBytes := []byte(message)
 		for totalWritten < len(messageBytes) {
@@ -82,7 +80,7 @@ func (c *Client) StartClientLoop() {
 		}
 
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-
+		
 		// Ensure connection is closed after use
 		c.conn.Close()
 
