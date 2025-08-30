@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -28,9 +31,18 @@ type Client struct {
 // NewClient Initializes a new client receiving the configuration
 // as a parameter
 func NewClient(config ClientConfig) *Client {
-	client := &Client{
-		config: config,
-	}
+	client := &Client{config: config}
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Infof("action: signal_received | client_id: %v | result: initiating_graceful_shutdown", client.config.ID)
+		client.cleanup()
+		os.Exit(0)
+	}()
+
 	return client
 }
 
@@ -48,7 +60,19 @@ func (c *Client) createClientSocket() error {
 		return err
 	}
 	c.conn = conn
+	log.Infof("action: connect | result: success | client_id: %v", c.config.ID)
 	return nil
+}
+
+func (c *Client) cleanup() {
+	if c.conn != nil {
+		err := c.conn.Close()
+		if err != nil {
+			log.Errorf("action: close_connection | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		} else {
+			log.Infof("action: close_connection | result: success | client_id: %v", c.config.ID)
+		}
+	}
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
@@ -80,10 +104,9 @@ func (c *Client) StartClientLoop() {
 		}
 
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-		
-		// Ensure connection is closed after use
-		c.conn.Close()
 
+		c.cleanup()
+		
 		if err != nil {
 			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
 				c.config.ID,

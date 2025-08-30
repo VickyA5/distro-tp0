@@ -85,7 +85,6 @@ class Server:
         client socket will also be closed
         """
         self._active_connections.add(client_sock)
-        
         try:
             msg = self.__recv_complete_message(client_sock, 1024)
             addr = client_sock.getpeername()
@@ -93,10 +92,14 @@ class Server:
             response = "{}\n".format(msg).encode('utf-8')
             self.__send_complete_message(client_sock, response)
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             self._active_connections.discard(client_sock)
-            client_sock.close()
+            try:
+                client_sock.close()
+                logging.info("action: close_client_connection | result: success")
+            except OSError as e:
+                logging.warning(f"action: close_client_connection | result: fail | error: {e}")
 
     def __recv_complete_message(self, client_sock, buffer_size):
         """
