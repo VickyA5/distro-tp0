@@ -12,8 +12,8 @@ NUM_CLIENTS=$2
 echo "Output file name: $OUTPUT_FILE"
 echo "Number of clients: $NUM_CLIENTS"
 
-if ! [[ "$NUM_CLIENTS" =~ ^[0-9]+$ ]] || [ "$NUM_CLIENTS" -le 0 ]; then
-    echo "Error: The number of clients must be a positive integer"
+if ! [[ "$NUM_CLIENTS" =~ ^[0-9]+$ ]] || [ "$NUM_CLIENTS" -lt 0 ]; then
+    echo "Error: The number of clients must be a non-negative integer"
     exit 1
 fi
 
