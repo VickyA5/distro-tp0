@@ -202,3 +202,53 @@ Luego, ejecutar con la el nombre de archivo de salida y cantidad de clientes des
 ./generar-compose.sh <output_file> <n>
 ```
 
+# Ejercicio 2
+
+Para resolver este ejercicio utilicé volúmenes de docker con los archivos docker-compose para que monte los archivos de configuración desde el host hacia el contenedor. De esta forma, al hacer cambios en estos archivos que están definidos como volúmenes no se debe reconstruir las imágenes. Para lograrlo, modifiqué los docker-compose y además el script `generador-compose.py` para que se agreguen las líneas 
+
+```
+    volumes:
+      - ./server/config.ini:/config.ini
+```
+
+en el contenedor del servidor, y las líneas
+
+```
+    volumes:
+      - ./client/config.yaml:/config.yaml
+```
+
+en el contenedor de los clientes.
+
+Para probarlo, se pueden seguir los siguientes pasos:
+
+1. Primero ver las configuraciones actuales
+
+```bash
+cat client/config.yaml
+cat server/config.ini
+```
+
+2. Construir las imágenes 
+
+```bash
+make docker-image
+```
+
+3. Levantar el sistema
+
+```bash
+make docker-compose-up
+```
+
+4. Modificar las configuraciones en los archivos de configuración del servidor y/o de los clientes que se deseen, sin reconstruir
+
+5. Reiniciar los contenedores
+
+```bash
+docker-compose -f docker-compose-dev.yaml restart
+```
+
+Aclaración: este comando no reconstruye la imagen, simplemente detiene el proceso que está corriendo dentro del contenedor y lo vuelve a iniciar con la misma imagen. Esto es necesario ya que la configuración puede ya estar cargada en memoria.
+
+6. Verificar que los cambios se aplicaron, depende de qué configuración se haya modificado.
