@@ -252,3 +252,15 @@ docker-compose -f docker-compose-dev.yaml restart
 Aclaración: este comando no reconstruye la imagen, simplemente detiene el proceso que está corriendo dentro del contenedor y lo vuelve a iniciar con la misma imagen. Esto es necesario ya que la configuración puede ya estar cargada en memoria.
 
 6. Verificar que los cambios se aplicaron, depende de qué configuración se haya modificado.
+
+# Ejercicio 3
+
+Para este ejercicio creé un script que obtiene la configuración, crea y elimina automáticamente un contenedor que se conecta a la red del servidor y utiliza el comando netcat para enviar un mensaje de prueba al servidor. 
+
+Uso:
+
+```bash
+chmod +x validar-echo-server.sh
+./validar-echo-server.sh
+```
+
