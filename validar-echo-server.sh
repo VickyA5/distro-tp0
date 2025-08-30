@@ -1,46 +1,19 @@
-#!/bin/bash
+#!/bin/sh
 
-
-set -e
-
-TEST_MESSAGE="test_echo_message"
-
-cleanup() {
-    if [ ! -z "$TEMP_CONTAINER" ]; then
-        docker rm -f "$TEMP_CONTAINER" >/dev/null 2>&1 || true
-    fi
+retrieve_config() {
+    grep $1 server/config.ini | cut -d'=' -f2 | xargs
 }
 
-trap cleanup EXIT
+TEST_MSG="Test server"
 
-if ! docker network ls | grep -q "tp0_testing_net"; then
-    echo "action: test_echo_server | result: fail"
-    exit 1
-fi
+HOST=$(retrieve_config "SERVER_IP")
 
-# Crear un contenedor temporal con netcat para probar el servidor
-TEMP_CONTAINER=$(docker run -d --rm --name "echo_test_$(date +%s)" --network tp0_testing_net alpine:latest sleep 30)
+PORT=$(retrieve_config "SERVER_PORT")
 
-# Esperar un momento para que el contenedor esté listo
-sleep 1
+RESPONSE=$(docker run --rm --network=tp0_testing_net --entrypoint sh subfuzion/netcat -c "echo \"$TEST_MSG\" | nc -w 20 $HOST $PORT")
 
-# Verificar que el contenedor del servidor esté ejecutándose
-if ! docker ps | grep -q "server"; then
-    echo "action: test_echo_server | result: fail"
-    exit 1
-fi
-
-# Instalar netcat en el contenedor temporal y probar la comunicación
-RESPONSE=$(docker exec "$TEMP_CONTAINER" sh -c "
-    apk add --no-cache netcat-openbsd >/dev/null 2>&1
-    echo '$TEST_MESSAGE' | nc server 12345
-" 2>/dev/null)
-
-# Verificar que la respuesta coincida con el mensaje enviado
-if [ "$RESPONSE" = "$TEST_MESSAGE" ]; then
+if [ "$RESPONSE" = "$TEST_MSG" ]; then
     echo "action: test_echo_server | result: success"
-    exit 0
 else
     echo "action: test_echo_server | result: fail"
-    exit 1
 fi
