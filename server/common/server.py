@@ -46,7 +46,7 @@ class Server:
         Handle shutdown signals gracefully
         """
         signal_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT" if signum == signal.SIGINT else f"SIGNAL_{signum}"
-        logging.info(f'action: signal_received | signal: {signal_name} | active_connections: {len(self._active_connections)} | result: initiating_graceful_shutdown')
+        logging.info(f'action: signal_received | result: success | signal: {signal_name} | active_connections: {len(self._active_connections)} | shutdown: graceful')
         self._shutdown_requested = True
 
     def _cleanup(self):

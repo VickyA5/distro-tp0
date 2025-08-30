@@ -38,7 +38,7 @@ func NewClient(config ClientConfig) *Client {
 
 	go func() {
 		<-sigChan
-		log.Infof("action: signal_received | client_id: %v | result: initiating_graceful_shutdown", client.config.ID)
+		log.Infof("action: signal_received | result: success | client_id: %v | shutdown: graceful", client.config.ID)
 		client.cleanup()
 		os.Exit(0)
 	}()
