@@ -97,12 +97,12 @@ class Server:
                 bet = Protocol.parse_bet(msg)
                 store_bets([bet])
                 logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
-                response = Protocol.ok().encode("utf-8") # CREO QUE NO REQUIERE NINGUN TIPO DE ACK
+                # response = Protocol.ok().encode("utf-8") # CREO QUE NO REQUIERE NINGUN TIPO DE ACK
             except ProtocolError as e:
                 logging.error(f'action: apuesta_almacenada | result: fail | error: {e}')
-                response = "OK\n".encode("utf-8")   # TODO: o que devuelva err o corte
+                # response = "OK\n".encode("utf-8")   # TODO: o que devuelva err o corte
 
-            self.__send_complete_message(client_sock, response)
+            # self.__send_complete_message(client_sock, response)
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
