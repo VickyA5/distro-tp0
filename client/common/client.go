@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"strings"
 
 	"github.com/op/go-logging"
 )
@@ -79,17 +80,32 @@ func (c *Client) cleanup() {
 func (c *Client) StartClientLoop() {
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
+	firstName := os.Getenv("NOMBRE")
+	lastName := os.Getenv("APELLIDO")
+	document := os.Getenv("DOCUMENTO")
+	birthdate := os.Getenv("NACIMIENTO")
+	number := os.Getenv("NUMERO")
+
+	proto := Protocol{}
+
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		// Create the connection the server in every loop iteration. Send an
 		err := c.createClientSocket()
 		if err != nil {
 			return
 		}
 
-		message := fmt.Sprintf("[CLIENT %v] Message N°%v\n", c.config.ID, msgID)
+		bet := Bet{
+			Agency:    c.config.ID,
+			FirstName: firstName,
+			LastName:  lastName,
+			Document:  document,
+			Birthdate: birthdate,
+			Number:    number,
+		}
+		line := proto.SerializeBet(bet)
+		messageBytes := []byte(line)
 		
 		totalWritten := 0
-		messageBytes := []byte(message)
 		for totalWritten < len(messageBytes) {
 			n, err := c.conn.Write(messageBytes[totalWritten:])
 			if err != nil {
@@ -115,12 +131,15 @@ func (c *Client) StartClientLoop() {
 			return
 		}
 
-		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-			c.config.ID,
-			msg,
-		)
+		if strings.TrimSpace(msg) == "OK" {
+			log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
+				bet.Document, bet.Number)
+		} else {
+			log.Errorf("action: apuesta_enviada | result: fail | client_id: %v | server_msg: %q",
+				c.config.ID, strings.TrimSpace(msg))
+			return
+		}
 
-		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
 
 	}

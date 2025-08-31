@@ -1,6 +1,9 @@
 import socket
 import logging
 import signal
+from protocol import Protocol, ProtocolError
+from utils import store_bets
+
 
 
 class Server:
@@ -89,7 +92,16 @@ class Server:
             msg = self.__recv_complete_message(client_sock, 1024)
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            response = "{}\n".format(msg).encode('utf-8')
+
+            try:
+                bet = Protocol.parse_bet(msg)
+                store_bets([bet])
+                logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
+                response = Protocol.ok().encode("utf-8") # CREO QUE NO REQUIERE NINGUN TIPO DE ACK
+            except ProtocolError as e:
+                logging.error(f'action: apuesta_almacenada | result: fail | error: {e}')
+                response = "OK\n".encode("utf-8")   # TODO: o que devuelva err o corte
+
             self.__send_complete_message(client_sock, response)
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
