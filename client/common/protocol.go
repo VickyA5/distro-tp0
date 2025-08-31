@@ -16,7 +16,7 @@ type Protocol struct{}
 func (Protocol) escape(s string) string {
 	out := make([]rune, 0, len(s))
 	for _, r := range s {
-		if r == '\\' || r == '|' {
+		if r == '\\' || r == '#' {
 			out = append(out, '\\')
 		}
 		out = append(out, r)
@@ -25,7 +25,7 @@ func (Protocol) escape(s string) string {
 }
 
 func (p Protocol) SerializeBet(b Bet) string {
-	return fmt.Sprintf("BET|%s|%s|%s|%s|%s|%s\n",
+	return fmt.Sprintf("BET#%s#%s#%s#%s#%s#%s\n",
 		p.escape(b.Agency),
 		p.escape(b.FirstName),
 		p.escape(b.LastName),

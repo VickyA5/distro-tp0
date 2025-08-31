@@ -17,7 +17,6 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
-      - CLI_LOG_LEVEL=DEBUG
       - NOMBRE=Victoria
       - APELLIDO=Avalos
       - DOCUMENTO=43873369

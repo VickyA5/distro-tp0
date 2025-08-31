@@ -8,7 +8,7 @@ class Protocol:
 
     @staticmethod
     def escape(s: str) -> str:
-        return s.replace("\\", "\\\\").replace("|", "\\|")
+        return s.replace("\\", "\\\\").replace("#", "\\#")
 
     @staticmethod
     def unescape(s: str) -> str:
@@ -26,7 +26,7 @@ class Protocol:
         return "".join(out)
 
     @staticmethod
-    def split_escaped(line: str, sep: str = "|") -> list[str]:
+    def split_escaped(line: str, sep: str = "#") -> list[str]:
         parts, cur, esc = [], [], False
         for ch in line:
             if esc:
@@ -59,7 +59,7 @@ class Protocol:
 
     @classmethod
     def serialize_bet(cls, bet: Bet) -> str:
-        return "BET|{}|{}|{}|{}|{}|{}\n".format(
+        return "BET#{}#{}#{}#{}#{}#{}\n".format(
             cls.escape(str(bet.agency)),
             cls.escape(bet.first_name),
             cls.escape(bet.last_name),
