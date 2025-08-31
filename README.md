@@ -264,3 +264,9 @@ chmod +x validar-echo-server.sh
 ./validar-echo-server.sh
 ```
 
+# Ejercicio 4
+
+Debido a que había un TODO en el código del servidor que indicaba hacer un graceful shutdow, ya lo había implementado desde el ejercicio 1 (resolví los TODO en un principio). En esta rama, lo que hice diferente fue agregar los logs correspondientes al server e implementar el graceful shutdown del lado del cliente. 
+
+Para resolverlo, implementé el manejo de señales y agregué funciones de closeup que cierran los sockets.
+
