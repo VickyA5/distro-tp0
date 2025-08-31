@@ -19,6 +19,11 @@ services:
     environment:
       - CLI_ID=1
       - CLI_LOG_LEVEL=DEBUG
+      - NOMBRE=Juan
+      - APELLIDO=Perez
+      - DOCUMENTO=12345678
+      - NACIMIENTO=1990-01-01
+      - NUMERO=1234
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -33,6 +38,11 @@ services:
     environment:
       - CLI_ID=2
       - CLI_LOG_LEVEL=DEBUG
+      - NOMBRE=Maria
+      - APELLIDO=Gonzalez
+      - DOCUMENTO=87654321
+      - NACIMIENTO=1985-05-15
+      - NUMERO=5678
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -47,6 +57,11 @@ services:
     environment:
       - CLI_ID=3
       - CLI_LOG_LEVEL=DEBUG
+      - NOMBRE=Carlos
+      - APELLIDO=Rodriguez
+      - DOCUMENTO=11223344
+      - NACIMIENTO=1992-12-25
+      - NUMERO=9999
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:

@@ -17,6 +17,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
+      - NOMBRE=Juan
+      - APELLIDO=Perez
+      - DOCUMENTO=12345678
+      - NACIMIENTO=1990-01-01
+      - NUMERO=1234
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -30,6 +35,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=2
+      - NOMBRE=Maria
+      - APELLIDO=Gonzalez
+      - DOCUMENTO=87654321
+      - NACIMIENTO=1985-05-15
+      - NUMERO=5678
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
