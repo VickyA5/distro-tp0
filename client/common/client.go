@@ -1,14 +1,11 @@
 package common
 
 import (
-	"bufio"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-	"strings"
 
 	"github.com/op/go-logging"
 )
