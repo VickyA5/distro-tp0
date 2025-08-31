@@ -119,29 +119,13 @@ func (c *Client) StartClientLoop() {
 			totalWritten += n
 		}
 
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-
 		c.cleanup()
-		
-		if err != nil {
-			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-				c.config.ID,
-				err,
-			)
-			return
-		}
 
-		if strings.TrimSpace(msg) == "OK" {
-			log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-				bet.Document, bet.Number)
-		} else {
-			log.Errorf("action: apuesta_enviada | result: fail | client_id: %v | server_msg: %q",
-				c.config.ID, strings.TrimSpace(msg))
-			return
-		}
+		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
+			bet.Document, bet.Number)
 
 		time.Sleep(c.config.LoopPeriod)
-
 	}
+
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
