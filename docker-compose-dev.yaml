@@ -17,6 +17,12 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
+      - CLI_LOG_LEVEL=DEBUG
+      - NOMBRE=Victoria
+      - APELLIDO=Avalos
+      - DOCUMENTO=43873369
+      - NACIMIENTO=2002-02-05
+      - NUMERO=9999
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
