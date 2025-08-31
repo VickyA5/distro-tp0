@@ -1,8 +1,8 @@
 import socket
 import logging
 import signal
-from protocol import Protocol, ProtocolError
-from utils import store_bets
+from common.protocol import Protocol, ProtocolError
+from common.utils import store_bets
 
 
 

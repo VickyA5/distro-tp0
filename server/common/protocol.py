@@ -1,4 +1,4 @@
-from utils import Bet
+from common.utils import Bet
 
 class ProtocolError(Exception):
     pass
