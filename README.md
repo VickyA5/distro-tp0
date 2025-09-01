@@ -276,7 +276,7 @@ Para esta parte opté por implementar un protocolo que utiliza al caracter `#` c
 
 `BET#<AGENCIA>#<FIRST_NAME>#<LAST_NAME>#<DOCUMENT>#<BIRTHDATE>#<NUMBER>`
 
-Incluí una cabecera del tipo de mensaje "BET" en un principio ya que creí que debería enviar como respuesta algún tipo de confirmación del mensaje, al cual pensaba ponerle un código de mensaje como "ACK". Sin embargo, al releer el enunciado me dí cuenta que no era necesario, y como el protocolo de capa de transporte que se usa por detrás es TCP, no había necesidad de mantenerlo. Pero luego tuve un problema con los tests del lado del cliente, que como tenía imports en el cliente que no estaba utilizando (no sabía que en go esto genera un error de compilación), los tests estaban utilizando la imagen anterior (con el formato de mensaje del ejercicio 4). Para poder resolver el problema me resultó útil parsear los mensajes de forma tal que si no comienzan con "BET" ya se considera que hay un error. Debido a eso, decidí mantener ese header. 
+Incluí una cabecera del tipo de mensaje "BET" para que el protocolo sea más robusto y extendible para poder reutilizarlo en los próximos ejercicios.
 
 Con respecto al protocolo, lo modularicé en archivos diferentes en el servidor y en el cliente para separar responsabilidades. Los mensajes son strings y el servidor, al decodificarlos, los lee como utf-8.
 
@@ -300,4 +300,4 @@ Cada cliente lee únicamente su archivo de apuestas específico (`./data/agency-
 El servidor primero detecta si el mensaje comienza con `BATCH#` y extrae el número de apuestas esperadas y una lista de mensajes BET individuales. Luego, se verifica que la cantidad declarada coincida con las apuestas recibidas, y se las almacena con la función provista por la cátedra `parse_bet()`.
 Finalmente, en caso de éxito envía una respuesta de `OK` si pudo procesar correctamente todas las apuestas.
 
-
+Además, modifiqué el archivo `generador-compose.py` para cumplir con las características de este ejercicio.
