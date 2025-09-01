@@ -281,3 +281,23 @@ Incluí una cabecera del tipo de mensaje "BET" en un principio ya que creí que 
 Con respecto al protocolo, lo modularicé en archivos diferentes en el servidor y en el cliente para separar responsabilidades. Los mensajes son strings y el servidor, al decodificarlos, los lee como utf-8.
 
 Además, modifiqué el script `generador-compose.py` para que establezca las variables de entorno utilizadas en este ejercicio.
+
+# Ejercicio 6
+
+Para resolver el problema de enviar las apuestas de a batches, mantuve el protocolo del ejercicio anterior pero agregándole una cabecera diferente que representa el tipo de operación y la cantidad de bets:
+
+```console
+BATCH#<count>
+BET#<agency>#<first_name>#<last_name>#<document>#<birthdate>#<number>
+BET#<agency>#<first_name>#<last_name>#<document>#<birthdate>#<number>
+...
+```
+
+Si hay más de una apuesta, se agregan al final, cada una respetando el mismo protocolo del ejercicio anterior.
+
+Cada cliente lee únicamente su archivo de apuestas específico (`./data/agency-<N>.csv`), el cual se inyecta en el contenedor como volumen. Se usa la variable de entorno maxAMount para definir el tamaño máximo del batch, y si hay más apuestas que dicho límite entonces se dividen en múltiples batches. Este tamaño máximo se eligió teniendo en cuenta los archivos de muestra y dejando cierto margen.
+
+El servidor primero detecta si el mensaje comienza con `BATCH#` y extrae el número de apuestas esperadas y una lista de mensajes BET individuales. Luego, se verifica que la cantidad declarada coincida con las apuestas recibidas, y se las almacena con la función provista por la cátedra `parse_bet()`.
+Finalmente, en caso de éxito envía una respuesta de `OK` si pudo procesar correctamente todas las apuestas.
+
+

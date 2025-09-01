@@ -112,7 +112,6 @@ class Server:
                     
             except ProtocolError as e:
                 if msg.startswith("BATCH#"):
-                    # Try to get bet count from batch header for logging
                     try:
                         header_line = msg.split('\n')[0]
                         count = int(header_line.split('#')[1])
