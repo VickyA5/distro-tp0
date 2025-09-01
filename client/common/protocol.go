@@ -41,3 +41,20 @@ func (p Protocol) SerializeBet(b Bet) string {
 		p.escape(b.Number),
 	)
 }
+
+// SerializeBatch converts a slice of Bet structs into a formatted BATCH message string.
+// The message format is: BATCH#count\nBET#agency#first_name#last_name#document#birthdate#number\n...
+// This allows sending multiple bets in a single transmission for efficient batch processing.
+func (p Protocol) SerializeBatch(bets []Bet) string {
+	if len(bets) == 0 {
+		return ""
+	}
+	
+	result := fmt.Sprintf("BATCH#%d\n", len(bets))
+	for _, bet := range bets {
+		// Remove the \n from individual SerializeBet and add it manually
+		betStr := p.SerializeBet(bet)
+		result += betStr
+	}
+	return result
+}

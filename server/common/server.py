@@ -91,14 +91,43 @@ class Server:
         try:
             msg = self.__recv_complete_message(client_sock, 1024)
             addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
+            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg_size: {len(msg)} bytes')
 
             try:
-                bet = Protocol.parse_bet(msg)
-                store_bets([bet])
-                logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
+                if msg.startswith("BATCH#"):
+                    # Handle batch message
+                    bets = Protocol.parse_batch(msg)
+                    store_bets(bets)
+                    logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
+                    
+                    # Send success response
+                    self.__send_complete_message(client_sock, b"OK\n")
+                    
+                elif msg.startswith("BET#"):
+                    # Handle individual bet message (backward compatibility)
+                    bet = Protocol.parse_bet(msg)
+                    store_bets([bet])
+                    logging.info(f'action: apuesta_recibida | result: success | cantidad: 1')
+                    
+                    # Send success response
+                    self.__send_complete_message(client_sock, b"OK\n")
+                else:
+                    raise ProtocolError("unknown_message_type")
+                    
             except ProtocolError as e:
-                logging.error(f'action: apuesta_almacenada | result: fail | error: {e}')
+                if msg.startswith("BATCH#"):
+                    # Try to get bet count from batch header for logging
+                    try:
+                        header_line = msg.split('\n')[0]
+                        count = int(header_line.split('#')[1])
+                        logging.error(f'action: apuesta_recibida | result: fail | cantidad: {count}')
+                    except:
+                        logging.error(f'action: apuesta_recibida | result: fail | cantidad: unknown')
+                else:
+                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: 1')
+                
+                # Send error response
+                self.__send_complete_message(client_sock, b"ERROR\n")
 
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
@@ -114,16 +143,52 @@ class Server:
         """
         Receive complete message handling short-reads
         
-        Continues receiving until a newline is found or connection is closed
+        For BATCH messages, continues receiving until all expected BET lines are received
+        For individual BET messages, continues until newline is found
         """
         message = b''
+        expected_bets = None
+        received_bets = 0
+        
         while True:
             chunk = client_sock.recv(buffer_size)
             if not chunk:  
                 break
             message += chunk
-            if b'\n' in message:  
-                break
+            
+            # Decode message to analyze it
+            try:
+                decoded = message.decode('utf-8')
+                lines = decoded.split('\n')
+                
+                # Check if this is a BATCH message
+                if decoded.startswith('BATCH#') and expected_bets is None:
+                    try:
+                        header_parts = lines[0].split('#')
+                        if len(header_parts) >= 2:
+                            expected_bets = int(header_parts[1])
+                    except (ValueError, IndexError):
+                        # Invalid BATCH header, continue receiving until newline
+                        if b'\n' in message:
+                            break
+                        continue
+                
+                if expected_bets is not None:
+                    # Count BET lines (skip BATCH header and empty lines)
+                    received_bets = sum(1 for line in lines[1:] if line.strip().startswith('BET#'))
+                    
+                    # Check if we have all expected bets plus the batch header
+                    if received_bets >= expected_bets:
+                        break
+                else:
+                    # For individual BET messages or invalid BATCH, wait for newline
+                    if b'\n' in message:
+                        break
+                        
+            except UnicodeDecodeError:
+                # Continue receiving if we can't decode yet
+                continue
+        
         return message.rstrip().decode('utf-8')
 
     def __send_complete_message(self, client_sock, message):

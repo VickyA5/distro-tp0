@@ -1,9 +1,13 @@
 package common
 
 import (
+	"encoding/csv"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,10 +18,11 @@ var log = logging.MustGetLogger("log")
 
 // ClientConfig Configuration used by the client
 type ClientConfig struct {
-	ID            string
-	ServerAddress string
-	LoopAmount    int
-	LoopPeriod    time.Duration
+	ID             string
+	ServerAddress  string
+	LoopAmount     int
+	LoopPeriod     time.Duration
+	BatchMaxAmount int
 }
 
 // Client Entity that encapsulates how
@@ -73,56 +78,133 @@ func (c *Client) cleanup() {
 	}
 }
 
-// StartClientLoop Send messages to the client until some time threshold is met
+// StartClientLoop Load bets from CSV file and send them in batches
 func (c *Client) StartClientLoop() {
-	// There is an autoincremental msgID to identify every message sent
-	// Messages if the message amount threshold has not been surpassed
-	firstName := os.Getenv("NOMBRE")
-	lastName := os.Getenv("APELLIDO")
-	document := os.Getenv("DOCUMENTO")
-	birthdate := os.Getenv("NACIMIENTO")
-	number := os.Getenv("NUMERO")
-
-	proto := Protocol{}
-
-	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		err := c.createClientSocket()
-		if err != nil {
-			return
-		}
-
-		bet := Bet{
-			Agency:    c.config.ID,
-			FirstName: firstName,
-			LastName:  lastName,
-			Document:  document,
-			Birthdate: birthdate,
-			Number:    number,
-		}
-		line := proto.SerializeBet(bet)
-		messageBytes := []byte(line)
-		
-		totalWritten := 0
-		for totalWritten < len(messageBytes) {
-			n, err := c.conn.Write(messageBytes[totalWritten:])
-			if err != nil {
-				log.Errorf("action: send_message | result: fail | client_id: %v | error: %v",
-					c.config.ID,
-					err,
-				)
-				c.conn.Close()
-				return
-			}
-			totalWritten += n
-		}
-
-		c.cleanup()
-
-		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s",
-			bet.Document, bet.Number)
-
-		time.Sleep(c.config.LoopPeriod)
+	// Load all bets from CSV file
+	bets, err := c.loadBetsFromCSV()
+	if err != nil {
+		log.Errorf("action: load_csv | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
 	}
 
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	log.Infof("action: load_csv | result: success | client_id: %v | total_bets: %d", c.config.ID, len(bets))
+
+	// Process bets in batches
+	batchSize := c.config.BatchMaxAmount
+	totalBets := len(bets)
+	
+	for i := 0; i < totalBets; i += batchSize {
+		end := i + batchSize
+		if end > totalBets {
+			end = totalBets
+		}
+		
+		batch := bets[i:end]
+		
+		err := c.sendBatch(batch)
+		if err != nil {
+			log.Errorf("action: send_batch | result: fail | client_id: %v | batch_start: %d | batch_size: %d | error: %v", 
+				c.config.ID, i, len(batch), err)
+			return
+		}
+		
+		// Sleep between batches if needed
+		if end < totalBets {
+			time.Sleep(c.config.LoopPeriod)
+		}
+	}
+
+	log.Infof("action: loop_finished | result: success | client_id: %v | total_batches_sent: %d", 
+		c.config.ID, (totalBets+batchSize-1)/batchSize)
+}
+
+// loadBetsFromCSV loads bets from the CSV file for this agency
+func (c *Client) loadBetsFromCSV() ([]Bet, error) {
+	filename := fmt.Sprintf("/.data/agency-%s.csv", c.config.ID)
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var bets []Bet
+	reader := csv.NewReader(file)
+	
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		
+		if len(record) != 5 {
+			continue // Skip malformed records
+		}
+		
+		bet := Bet{
+			Agency:    c.config.ID,
+			FirstName: strings.Split(record[0], " ")[0],
+			LastName:  strings.Join(strings.Split(record[0], " ")[1:], " ") + " " + record[1],
+			Document:  record[2],
+			Birthdate: record[3],
+			Number:    record[4],
+		}
+		bets = append(bets, bet)
+	}
+	
+	return bets, nil
+}
+
+// sendBatch sends a batch of bets to the server and waits for response
+func (c *Client) sendBatch(bets []Bet) error {
+	err := c.createClientSocket()
+	if err != nil {
+		return err
+	}
+	defer c.cleanup()
+
+	proto := Protocol{}
+	batchMessage := proto.SerializeBatch(bets)
+	messageBytes := []byte(batchMessage)
+	
+	// Send the batch
+	totalWritten := 0
+	for totalWritten < len(messageBytes) {
+		n, err := c.conn.Write(messageBytes[totalWritten:])
+		if err != nil {
+			log.Errorf("action: send_batch | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+			return err
+		}
+		totalWritten += n
+	}
+
+	// Wait for response
+	response, err := c.receiveResponse()
+	if err != nil {
+		log.Errorf("action: receive_response | result: fail | client_id: %v | error: %v",
+			c.config.ID, err)
+		return err
+	}
+
+	if response == "OK" {
+		log.Infof("action: batch_enviado | result: success | cantidad: %d", len(bets))
+	} else {
+		log.Errorf("action: batch_enviado | result: fail | cantidad: %d | response: %s", len(bets), response)
+		return fmt.Errorf("server rejected batch: %s", response)
+	}
+
+	return nil
+}
+
+// receiveResponse waits for server response
+func (c *Client) receiveResponse() (string, error) {
+	buffer := make([]byte, 1024)
+	n, err := c.conn.Read(buffer)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(buffer[:n])), nil
 }
