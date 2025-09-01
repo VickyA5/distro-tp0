@@ -80,7 +80,6 @@ func (c *Client) cleanup() {
 
 // StartClientLoop Load bets from CSV file and send them in batches
 func (c *Client) StartClientLoop() {
-	// Load all bets from CSV file
 	bets, err := c.loadBetsFromCSV()
 	if err != nil {
 		log.Errorf("action: load_csv | result: fail | client_id: %v | error: %v", c.config.ID, err)
@@ -89,7 +88,6 @@ func (c *Client) StartClientLoop() {
 
 	log.Infof("action: load_csv | result: success | client_id: %v | total_bets: %d", c.config.ID, len(bets))
 
-	// Process bets in batches
 	batchSize := c.config.BatchMaxAmount
 	totalBets := len(bets)
 	
@@ -108,7 +106,6 @@ func (c *Client) StartClientLoop() {
 			return
 		}
 		
-		// Sleep between batches if needed
 		if end < totalBets {
 			time.Sleep(c.config.LoopPeriod)
 		}
@@ -169,7 +166,6 @@ func (c *Client) sendBatch(bets []Bet) error {
 	batchMessage := proto.SerializeBatch(bets)
 	messageBytes := []byte(batchMessage)
 	
-	// Send the batch
 	totalWritten := 0
 	for totalWritten < len(messageBytes) {
 		n, err := c.conn.Write(messageBytes[totalWritten:])
@@ -181,7 +177,6 @@ func (c *Client) sendBatch(bets []Bet) error {
 		totalWritten += n
 	}
 
-	// Wait for response
 	response, err := c.receiveResponse()
 	if err != nil {
 		log.Errorf("action: receive_response | result: fail | client_id: %v | error: %v",

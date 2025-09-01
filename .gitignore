@@ -5,3 +5,5 @@
 bin/
 
 .vscode/
+
+.data/*.csv

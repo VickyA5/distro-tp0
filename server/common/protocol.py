@@ -123,3 +123,44 @@ class Protocol:
             cls.escape(str(bet.number)),
         )
 
+    @classmethod
+    def parse_batch(cls, message: str) -> list[Bet]:
+        """
+        Parse a BATCH message string into a list of Bet objects.
+        
+        Args:
+            message (str): Raw BATCH message string in format "BATCH#count\nBET#...\nBET#..."
+            
+        Returns:
+            list[Bet]: List of parsed bet objects
+            
+        Raises:
+            ProtocolError: If message format is invalid or bet count doesn't match
+        """
+        lines = message.strip().split('\n')
+        if not lines:
+            raise ProtocolError("empty_message")
+        
+        header_parts = cls.split_escaped(lines[0])
+        if len(header_parts) != 2 or header_parts[0] != "BATCH":
+            raise ProtocolError("invalid_batch_header")
+        
+        try:
+            expected_count = int(header_parts[1])
+        except ValueError:
+            raise ProtocolError("invalid_batch_count")
+        
+        bets = []
+        for line in lines[1:]:
+            line = line.strip()
+            if not line:
+                continue
+            if not line.startswith("BET#"):
+                raise ProtocolError("invalid_bet_line")
+            bets.append(cls.parse_bet(line))
+        
+        if len(bets) != expected_count:
+            raise ProtocolError(f"bet_count_mismatch: expected {expected_count}, got {len(bets)}")
+        
+        return bets
+

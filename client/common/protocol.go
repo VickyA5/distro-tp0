@@ -52,7 +52,6 @@ func (p Protocol) SerializeBatch(bets []Bet) string {
 	
 	result := fmt.Sprintf("BATCH#%d\n", len(bets))
 	for _, bet := range bets {
-		// Remove the \n from individual SerializeBet and add it manually
 		betStr := p.SerializeBet(bet)
 		result += betStr
 	}

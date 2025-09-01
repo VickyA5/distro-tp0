@@ -4,7 +4,7 @@ def generate_docker_compose_content(num_clients):
     """
     Generates the content of the Docker Compose file as a string
     """
-    content = "name: tp0\n"
+    content = "version: '3.8'\n"
     content += "services:\n"
     
     content += "  server:\n"
