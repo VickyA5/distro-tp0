@@ -34,6 +34,7 @@ def generate_docker_compose_content(num_clients):
         content += "      - NUMERO=9999\n"
         content += "    volumes:\n"
         content += "      - ./client/config.yaml:/config.yaml\n"
+        content += "      - ./.data:/.data\n"
         content += "    networks:\n"
         content += "      - testing_net\n"
         content += "    depends_on:\n"
