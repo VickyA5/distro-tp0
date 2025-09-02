@@ -20,7 +20,6 @@ var log = logging.MustGetLogger("log")
 type ClientConfig struct {
 	ID             string
 	ServerAddress  string
-	LoopAmount     int
 	LoopPeriod     time.Duration
 	BatchMaxAmount int
 }
@@ -290,7 +289,6 @@ func (c *Client) queryWinners() error {
 		return err
 	}
 
-	// Parse winners response - format: "WINNERS#count#doc1#doc2#..."
 	parts := strings.Split(response, "#")
 	if len(parts) < 2 || parts[0] != "WINNERS" {
 		log.Errorf("action: query_winners | result: fail | client_id: %v | invalid_response: %s", c.config.ID, response)
