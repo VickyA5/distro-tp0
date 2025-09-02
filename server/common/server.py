@@ -20,6 +20,7 @@ class Server:
         self._agencies_that_sent_bets = set()  # Track which agencies sent at least one bet
         self._total_agencies = 5  # Default to 5, but will be adjusted dynamically
         self._lottery_completed = False  # Whether the lottery draw has been completed
+        self._pending_winners_queries = []  # Store pending winner queries until lottery completes
 
     def run(self):
         """
@@ -128,6 +129,8 @@ class Server:
                     if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed and len(self._agencies_that_sent_bets) > 0:
                         self._lottery_completed = True
                         logging.info('action: sorteo | result: success')
+                        # Process any pending winner queries
+                        self._process_pending_winner_queries()
                     
                     self.__send_complete_message(client_sock, b"OK\n")
 
@@ -135,9 +138,12 @@ class Server:
                     agency = Protocol.parse_query_winners(msg)
                     
                     if not self._lottery_completed:
-                        # Lottery not completed yet, cannot provide winners
-                        self.__send_complete_message(client_sock, b"ERROR: lottery not completed\n")
-                        logging.warning(f'action: query_winners | result: fail | agency: {agency} | reason: lottery_not_completed')
+                        # Lottery not completed yet, store the query for later processing
+                        self._pending_winners_queries.append((client_sock, agency))
+                        logging.info(f'action: query_winners_pending | agency: {agency} | pending_count: {len(self._pending_winners_queries)}')
+                        # Don't send response yet - keep connection open
+                        self._active_connections.discard(client_sock)  # Don't close this connection in finally block
+                        return  # Exit without closing the connection
                     else:
                         # Get winners for this agency
                         winners = self._get_winners_for_agency(agency)
@@ -276,4 +282,30 @@ class Server:
             logging.error(f'action: get_winners | result: fail | agency: {agency} | error: {e}')
         
         return winners
+    
+    def _process_pending_winner_queries(self):
+        """
+        Process all pending winner queries after the lottery is completed.
+        """
+        logging.info(f'action: processing_pending_queries | count: {len(self._pending_winners_queries)}')
+        
+        for client_sock, agency in self._pending_winners_queries:
+            try:
+                # Get winners for this agency
+                winners = self._get_winners_for_agency(agency)
+                winners_msg = Protocol.serialize_winners(winners)
+                self.__send_complete_message(client_sock, winners_msg.encode())
+                logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
+                
+                # Close the connection
+                client_sock.close()
+            except Exception as e:
+                logging.error(f'action: send_pending_winners | result: fail | agency: {agency} | error: {e}')
+                try:
+                    client_sock.close()
+                except:
+                    pass
+        
+        # Clear the pending queries
+        self._pending_winners_queries.clear()
     
