@@ -298,7 +298,7 @@ func (c *Client) queryWinners() error {
 	}
 
 	winnersCount := parts[1]
-	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %s", winnersCount)
+	log.Infof("action: consulta_ganadores | result: success | client_id: %v | cant_ganadores: %s", c.config.ID, winnersCount)
 
 	return nil
 }
