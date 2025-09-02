@@ -57,3 +57,15 @@ func (p Protocol) SerializeBatch(bets []Bet) string {
 	}
 	return result
 }
+
+// SerializeFinishBets creates a FINISH_BETS message to notify the server
+// that the agency has finished sending all its bets
+func (p Protocol) SerializeFinishBets(agency string) string {
+	return fmt.Sprintf("FINISH_BETS#%s\n", p.escape(agency))
+}
+
+// SerializeQueryWinners creates a QUERY_WINNERS message to request
+// the list of winners for a specific agency
+func (p Protocol) SerializeQueryWinners(agency string) string {
+	return fmt.Sprintf("QUERY_WINNERS#%s\n", p.escape(agency))
+}

@@ -113,6 +113,20 @@ func (c *Client) StartClientLoop() {
 
 	log.Infof("action: loop_finished | result: success | client_id: %v | total_batches_sent: %d", 
 		c.config.ID, (totalBets+batchSize-1)/batchSize)
+
+	// Notify server that this agency finished sending bets
+	err = c.notifyFinishBets()
+	if err != nil {
+		log.Errorf("action: notify_finish_bets | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
+
+	// Query winners for this agency
+	err = c.queryWinners()
+	if err != nil {
+		log.Errorf("action: query_winners | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		return
+	}
 }
 
 // loadBetsFromCSV loads bets from the CSV file for this agency
@@ -202,4 +216,89 @@ func (c *Client) receiveResponse() (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(buffer[:n])), nil
+}
+
+// notifyFinishBets sends a FINISH_BETS message to notify the server
+// that this agency has finished sending all its bets
+func (c *Client) notifyFinishBets() error {
+	err := c.createClientSocket()
+	if err != nil {
+		return err
+	}
+	defer c.cleanup()
+
+	proto := Protocol{}
+	finishMessage := proto.SerializeFinishBets(c.config.ID)
+	messageBytes := []byte(finishMessage)
+
+	totalWritten := 0
+	for totalWritten < len(messageBytes) {
+		n, err := c.conn.Write(messageBytes[totalWritten:])
+		if err != nil {
+			log.Errorf("action: notify_finish_bets | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+			return err
+		}
+		totalWritten += n
+	}
+
+	response, err := c.receiveResponse()
+	if err != nil {
+		log.Errorf("action: receive_finish_response | result: fail | client_id: %v | error: %v",
+			c.config.ID, err)
+		return err
+	}
+
+	if response == "OK" {
+		log.Infof("action: notify_finish_bets | result: success | client_id: %v", c.config.ID)
+	} else {
+		log.Errorf("action: notify_finish_bets | result: fail | client_id: %v | response: %s", c.config.ID, response)
+		return fmt.Errorf("server rejected finish notification: %s", response)
+	}
+
+	return nil
+}
+
+// queryWinners sends a QUERY_WINNERS message to get the list of winners
+// for this agency and logs the result
+func (c *Client) queryWinners() error {
+	err := c.createClientSocket()
+	if err != nil {
+		return err
+	}
+	defer c.cleanup()
+
+	proto := Protocol{}
+	queryMessage := proto.SerializeQueryWinners(c.config.ID)
+	messageBytes := []byte(queryMessage)
+
+	totalWritten := 0
+	for totalWritten < len(messageBytes) {
+		n, err := c.conn.Write(messageBytes[totalWritten:])
+		if err != nil {
+			log.Errorf("action: query_winners | result: fail | client_id: %v | error: %v",
+				c.config.ID, err)
+			return err
+		}
+		totalWritten += n
+	}
+
+	response, err := c.receiveResponse()
+	if err != nil {
+		log.Errorf("action: receive_winners_response | result: fail | client_id: %v | error: %v",
+			c.config.ID, err)
+		return err
+	}
+
+	// Parse winners response - format: "WINNERS#count#doc1#doc2#..."
+	parts := strings.Split(response, "#")
+	if len(parts) < 2 || parts[0] != "WINNERS" {
+		log.Errorf("action: query_winners | result: fail | client_id: %v | invalid_response: %s", c.config.ID, response)
+		return fmt.Errorf("invalid winners response: %s", response)
+	}
+
+	winnersCount := parts[1]
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %s", winnersCount)
+
+	return nil
 }
