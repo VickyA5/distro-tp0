@@ -202,7 +202,7 @@ func (c *Client) sendBatch(bets []Bet) error {
 		log.Infof("action: batch_enviado | result: success | cantidad: %d", len(bets))
 	} else {
 		log.Errorf("action: batch_enviado | result: fail | cantidad: %d | response: %s", len(bets), response)
-		return fmt.Errorf("server rejected batch: %s", response)
+	 	return fmt.Errorf("server rejected batch: %s", response)
 	}
 
 	return nil

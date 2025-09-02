@@ -97,7 +97,7 @@ class Server:
         try:
             msg = self.__recv_complete_message(client_sock, 1024)
             addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg_size: {len(msg)} bytes')
+            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg_size: {len(msg)} bytes | msg_type: {msg.split("#")[0] if "#" in msg else msg.split()[0] if msg else "empty"}')
 
             try:
                 if msg.startswith("BATCH#"):
@@ -122,10 +122,10 @@ class Server:
                 elif msg.startswith("FINISH_BETS#"):
                     agency = Protocol.parse_finish_bets(msg)
                     self._agencies_finished.add(agency)
-                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)}')
+                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)} | agencies_with_bets: {self._agencies_that_sent_bets}')
                     
                     # Check if all agencies that sent bets have finished
-                    if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed:
+                    if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed and len(self._agencies_that_sent_bets) > 0:
                         self._lottery_completed = True
                         logging.info('action: sorteo | result: success')
                     
@@ -183,7 +183,7 @@ class Server:
         Receive complete message handling short-reads
         
         For BATCH messages, continues receiving until all expected BET lines are received
-        For individual BET messages, continues until newline is found
+        For other messages (BET, FINISH_BETS, QUERY_WINNERS), continues until newline is found
         """
         message = b''
         expected_bets = None
@@ -199,6 +199,7 @@ class Server:
                 decoded = message.decode('utf-8')
                 lines = decoded.split('\n')
                 
+                # Handle BATCH messages - need to receive all expected BET lines
                 if decoded.startswith('BATCH#') and expected_bets is None:
                     try:
                         header_parts = lines[0].split('#')
@@ -215,6 +216,7 @@ class Server:
                     if received_bets >= expected_bets:
                         break
                 else:
+                    # For simple messages (BET, FINISH_BETS, QUERY_WINNERS), just wait for newline
                     if b'\n' in message:
                         break
                         
