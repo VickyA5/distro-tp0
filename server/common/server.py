@@ -292,7 +292,7 @@ class Server:
         """
         Process all pending winner queries after the lottery is completed.
         """
-        logging.info(f'action: processing_pending_queries | count: {len(self._pending_winners_queries)}')
+        logging.info(f"action: processing_pending_queries | result: success | count: {len(self._pending_winners_queries)}")
         
         for client_sock, agency in self._pending_winners_queries:
             try:
