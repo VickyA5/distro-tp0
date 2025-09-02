@@ -95,6 +95,7 @@ class Server:
         client socket will also be closed
         """
         self._active_connections.add(client_sock)
+        keep_open = False
         try:
             msg = self.__recv_complete_message(client_sock, 1024)
             addr = client_sock.getpeername()
@@ -143,6 +144,7 @@ class Server:
                         logging.info(f'action: query_winners_pending | agency: {agency} | pending_count: {len(self._pending_winners_queries)}')
                         # Don't send response yet - keep connection open
                         self._active_connections.discard(client_sock)  # Don't close this connection in finally block
+                        keep_open = True
                         return  # Exit without closing the connection
                     else:
                         # Get winners for this agency
@@ -178,11 +180,12 @@ class Server:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             self._active_connections.discard(client_sock)
-            try:
-                client_sock.close()
-                logging.info("action: close_client_connection | result: success")
-            except OSError as e:
-                logging.warning(f"action: close_client_connection | result: fail | error: {e}")
+            if not keep_open:
+                try:
+                    client_sock.close()
+                    logging.info("action: close_client_connection | result: success")
+                except OSError as e:
+                    logging.warning(f"action: close_client_connection | result: fail | error: {e}")
 
     def __recv_complete_message(self, client_sock, buffer_size):
         """
