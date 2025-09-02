@@ -141,7 +141,9 @@ class Server:
                     if not self._lottery_completed:
                         # Lottery not completed yet, store the query for later processing
                         self._pending_winners_queries.append((client_sock, agency))
-                        logging.info(f'action: query_winners_pending | agency: {agency} | pending_count: {len(self._pending_winners_queries)}')
+                        logging.info(
+                            f"action: query_winners_pending | result: in_progress | agency: {agency} | pending_count: {len(self._pending_winners_queries)}"
+                        )
                         # Don't send response yet - keep connection open
                         self._active_connections.discard(client_sock)  # Don't close this connection in finally block
                         keep_open = True
