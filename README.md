@@ -301,3 +301,26 @@ El servidor primero detecta si el mensaje comienza con `BATCH#` y extrae el núm
 Finalmente, en caso de éxito envía una respuesta de `OK` si pudo procesar correctamente todas las apuestas.
 
 Además, modifiqué el archivo `generador-compose.py` para cumplir con las características de este ejercicio.
+
+# Ejercicio 7
+
+Se mantiene el protocolo utilizado anteriormente, incorporando nuevos tipos de mensajes. En primer lugar, las agencias se conectan y envían sus apuestas en lotes (`BATCH`) como antes. Cuando una agencia finaliza el envío de todas sus apuestas, lo indica mediante un mensaje de la forma `FINISH_BETS#agency`. El servidor registra a esa agencia como finalizada, y una vez que todas las agencias han notificado su finalización, procede a realizar el sorteo.
+
+Posteriormente, las agencias consultan los resultados del sorteo utilizando `QUERY_WINNERS#agency\n`. Si una consulta de este tipo llega antes de que se realice el sorteo, el servidor la marca como pendiente. En cambio, si el sorteo ya fue realizado, el servidor responde inmediatamente con los ganadores correspondientes a esa agencia.
+
+Una vez efectuado el sorteo, el servidor responde también a todas las consultas que habían quedado pendientes, enviando los DNIs de los ganadores en el siguiente formato:
+
+
+`
+WINNERS#count
+DNI1
+DNI2
+...
+`
+
+
+Los sockets asociados a las agencias que quedan en estado pendiente se mantienen abiertos hasta que el servidor pueda responder con los resultados del sorteo, y se cierran únicamente al finalizar dicho proceso. De esta manera se evita responder con información parcial y se asegura que cada cliente reciba únicamente los ganadores correspondientes a su propia agencia.
+
+Cabe destacar que cada operación genera un log con la estructura `action: ... | result: ...`, lo cual permite a los tests validar el comportamiento del sistema. Además, se garantiza el cierre ordenado de todos los recursos: los sockets que no quedan en estado pendiente se cierran al finalizar su ciclo de comunicación, mientras que aquellos que esperan resultados son cerrados explícitamente luego de que el servidor envía la respuesta definitiva.
+
+
