@@ -297,10 +297,18 @@ class Server:
                 self.__send_complete_message(client_sock, winners_msg.encode())
                 logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
                 
-                # Close the connection
+                # Properly shutdown and close the connection
+                try:
+                    client_sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass  # Connection might already be closed by client
                 client_sock.close()
             except Exception as e:
                 logging.error(f'action: send_pending_winners | result: fail | agency: {agency} | error: {e}')
+                try:
+                    client_sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
                 try:
                     client_sock.close()
                 except:
