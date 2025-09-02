@@ -17,7 +17,8 @@ class Server:
         
         # Lottery state management
         self._agencies_finished = set()  # Track which agencies finished sending bets
-        self._total_agencies = 5  # Always exactly 5 agencies
+        self._agencies_that_sent_bets = set()  # Track which agencies sent at least one bet
+        self._total_agencies = 5  # Default to 5, but will be adjusted dynamically
         self._lottery_completed = False  # Whether the lottery draw has been completed
 
     def run(self):
@@ -102,6 +103,9 @@ class Server:
                 if msg.startswith("BATCH#"):
                     bets = Protocol.parse_batch(msg)
                     store_bets(bets)
+                    # Track agencies that send bets
+                    for bet in bets:
+                        self._agencies_that_sent_bets.add(str(bet.agency))
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
                     
                     self.__send_complete_message(client_sock, b"OK\n")
@@ -109,6 +113,8 @@ class Server:
                 elif msg.startswith("BET#"):
                     bet = Protocol.parse_bet(msg)
                     store_bets([bet])
+                    # Track agencies that send bets
+                    self._agencies_that_sent_bets.add(str(bet.agency))
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: 1')
                     
                     self.__send_complete_message(client_sock, b"OK\n")
@@ -116,10 +122,10 @@ class Server:
                 elif msg.startswith("FINISH_BETS#"):
                     agency = Protocol.parse_finish_bets(msg)
                     self._agencies_finished.add(agency)
-                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{self._total_agencies}')
+                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)}')
                     
-                    # Check if all agencies finished and lottery hasn't been completed yet
-                    if len(self._agencies_finished) == self._total_agencies and not self._lottery_completed:
+                    # Check if all agencies that sent bets have finished
+                    if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed:
                         self._lottery_completed = True
                         logging.info('action: sorteo | result: success')
                     
