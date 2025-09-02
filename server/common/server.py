@@ -2,7 +2,7 @@ import socket
 import logging
 import signal
 from common.protocol import Protocol, ProtocolError
-from common.utils import store_bets
+from common.utils import store_bets, load_bets, has_won
 
 
 
@@ -13,7 +13,12 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._shutdown_requested = False
-        self._active_connections = set()  
+        self._active_connections = set()
+        
+        # Lottery state management
+        self._agencies_finished = set()  # Track which agencies finished sending bets
+        self._total_agencies = 5  # Always exactly 5 agencies
+        self._lottery_completed = False  # Whether the lottery draw has been completed
 
     def run(self):
         """
@@ -107,6 +112,33 @@ class Server:
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: 1')
                     
                     self.__send_complete_message(client_sock, b"OK\n")
+
+                elif msg.startswith("FINISH_BETS#"):
+                    agency = Protocol.parse_finish_bets(msg)
+                    self._agencies_finished.add(agency)
+                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{self._total_agencies}')
+                    
+                    # Check if all agencies finished and lottery hasn't been completed yet
+                    if len(self._agencies_finished) == self._total_agencies and not self._lottery_completed:
+                        self._lottery_completed = True
+                        logging.info('action: sorteo | result: success')
+                    
+                    self.__send_complete_message(client_sock, b"OK\n")
+
+                elif msg.startswith("QUERY_WINNERS#"):
+                    agency = Protocol.parse_query_winners(msg)
+                    
+                    if not self._lottery_completed:
+                        # Lottery not completed yet, cannot provide winners
+                        self.__send_complete_message(client_sock, b"ERROR: lottery not completed\n")
+                        logging.warning(f'action: query_winners | result: fail | agency: {agency} | reason: lottery_not_completed')
+                    else:
+                        # Get winners for this agency
+                        winners = self._get_winners_for_agency(agency)
+                        winners_msg = Protocol.serialize_winners(winners)
+                        self.__send_complete_message(client_sock, winners_msg.encode())
+                        logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
+
                 else:
                     raise ProtocolError("unknown_message_type")
                     
@@ -118,8 +150,14 @@ class Server:
                         logging.error(f'action: apuesta_recibida | result: fail | cantidad: {count}')
                     except:
                         logging.error(f'action: apuesta_recibida | result: fail | cantidad: unknown')
-                else:
+                elif msg.startswith("BET#"):
                     logging.error(f'action: apuesta_recibida | result: fail | cantidad: 1')
+                elif msg.startswith("FINISH_BETS#"):
+                    logging.error(f'action: finish_bets_received | result: fail | error: {e}')
+                elif msg.startswith("QUERY_WINNERS#"):
+                    logging.error(f'action: query_winners | result: fail | error: {e}')
+                else:
+                    logging.error(f'action: unknown_message | result: fail | error: {e}')
                 
                 # Send error response
                 self.__send_complete_message(client_sock, b"ERROR\n")
@@ -208,4 +246,26 @@ class Server:
         c.settimeout(None)
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
         return c
+    
+    def _get_winners_for_agency(self, agency: str) -> list[str]:
+        """
+        Get the list of winner documents for a specific agency.
+        
+        Args:
+            agency (str): Agency ID to get winners for
+            
+        Returns:
+            list[str]: List of winner document numbers for the agency
+        """
+        winners = []
+        try:
+            all_bets = load_bets()
+            for bet in all_bets:
+                # Check if bet is from the requested agency and is a winner
+                if str(bet.agency) == agency and has_won(bet):
+                    winners.append(bet.document)
+        except Exception as e:
+            logging.error(f'action: get_winners | result: fail | agency: {agency} | error: {e}')
+        
+        return winners
     

@@ -164,3 +164,55 @@ class Protocol:
         
         return bets
 
+    @classmethod
+    def parse_finish_bets(cls, line: str) -> str:
+        """
+        Parse a FINISH_BETS message to extract the agency ID.
+        
+        Args:
+            line (str): Raw FINISH_BETS message string in format "FINISH_BETS#agency"
+            
+        Returns:
+            str: Agency ID
+            
+        Raises:
+            ProtocolError: If message format is invalid
+        """
+        parts = cls.split_escaped(line)
+        if len(parts) != 2 or parts[0] != "FINISH_BETS":
+            raise ProtocolError("invalid_finish_bets_format")
+        return cls.unescape(parts[1])
+
+    @classmethod
+    def parse_query_winners(cls, line: str) -> str:
+        """
+        Parse a QUERY_WINNERS message to extract the agency ID.
+        
+        Args:
+            line (str): Raw QUERY_WINNERS message string in format "QUERY_WINNERS#agency"
+            
+        Returns:
+            str: Agency ID
+            
+        Raises:
+            ProtocolError: If message format is invalid
+        """
+        parts = cls.split_escaped(line)
+        if len(parts) != 2 or parts[0] != "QUERY_WINNERS":
+            raise ProtocolError("invalid_query_winners_format")
+        return cls.unescape(parts[1])
+
+    @classmethod
+    def serialize_winners(cls, winners: list[str]) -> str:
+        """
+        Serialize a list of winner documents into a WINNERS message string.
+        
+        Args:
+            winners (list[str]): List of winner document numbers
+            
+        Returns:
+            str: Formatted WINNERS message string
+        """
+        escaped_winners = [cls.escape(doc) for doc in winners]
+        return "WINNERS#{}#{}\n".format(len(winners), "#".join(escaped_winners))
+
