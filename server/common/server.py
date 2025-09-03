@@ -1,10 +1,11 @@
 import socket
 import logging
 import signal
+import threading
 from common.protocol import Protocol, ProtocolError
 from common.utils import store_bets, load_bets, has_won
 
-
+store_lock = threading.Lock()
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -13,7 +14,9 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._shutdown_requested = False
+
         self._active_connections = set()
+        self._threads = set()
         
         self._agencies_finished = set()  
         self._agencies_that_sent_bets = set()  
@@ -21,26 +24,28 @@ class Server:
         self._lottery_completed = False  
         self._pending_winners_queries = [] 
 
+        self._connections_lock = threading.Lock()
+        self._threads_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+
     def run(self):
-        """
-        Dummy Server loop
-
-        Server that accept a new connections and establishes a
-        communication with a client. After client with communucation
-        finishes, servers starts to accept new connections again
-        """
-
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
-        
         logging.info('action: server_start | result: success')
-        
+
         try:
             while not self._shutdown_requested:
                 try:
                     self._server_socket.settimeout(1.0)
                     client_sock = self.__accept_new_connection()
-                    self.__handle_client_connection(client_sock)
+                    t = threading.Thread(
+                        target=self.__handle_client_connection,
+                        args=(client_sock,),
+                        daemon=False   
+                    )
+                    with self._threads_lock:
+                        self._threads.add(t)
+                    t.start()
                 except socket.timeout:
                     continue
                 except OSError as e:
@@ -59,31 +64,40 @@ class Server:
         self._shutdown_requested = True
 
     def _cleanup(self):
-        """
-        Clean up server resources - close all active connections and server socket
-        """
         logging.info('action: server_shutdown | result: in_progress')
-        
-        if self._active_connections:
-            logging.info(f'action: closing_client_connections | count: {len(self._active_connections)}')
-            connections_to_close = self._active_connections.copy()
-            for client_sock in connections_to_close:
+
+        # Cerrar conexiones activas
+        with self._connections_lock:
+            for client_sock in list(self._active_connections):
                 try:
                     client_sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
                     client_sock.close()
                     logging.info('action: close_client_connection | result: success')
                 except OSError as e:
                     logging.warning(f'action: close_client_connection | result: fail | error: {e}')
             self._active_connections.clear()
-        
+
+        # Cerrar socket del servidor
         if self._server_socket:
             try:
                 self._server_socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
                 self._server_socket.close()
                 logging.info('action: close_server_socket | result: success')
             except OSError as e:
                 logging.warning(f'action: close_server_socket | result: fail | error: {e}')
-        
+
+        # Esperar a que terminen los threads de clientes
+        with self._threads_lock:
+            threads_to_join = list(self._threads)
+        for t in threads_to_join:
+            t.join(timeout=2.0)  # timeout para no colgar el shutdown
+
         logging.info('action: server_shutdown | result: success')
 
     def __handle_client_connection(self, client_sock):
@@ -93,7 +107,9 @@ class Server:
         If a problem arises in the communication with the client, the
         client socket will also be closed
         """
-        self._active_connections.add(client_sock)
+        with self._connections_lock:
+            self._active_connections.add(client_sock)
+
         keep_open = False
         try:
             msg = self.__recv_complete_message(client_sock, 1024)
@@ -103,49 +119,59 @@ class Server:
             try:
                 if msg.startswith("BATCH#"):
                     bets = Protocol.parse_batch(msg)
-                    store_bets(bets)
-                    for bet in bets:
-                        self._agencies_that_sent_bets.add(str(bet.agency))
+                    with store_lock:
+                        store_bets(bets)
+                    with self._state_lock:
+                        for bet in bets:
+                            self._agencies_that_sent_bets.add(str(bet.agency))
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
                     
                     self.__send_complete_message(client_sock, b"OK\n")
                     
                 elif msg.startswith("BET#"):
                     bet = Protocol.parse_bet(msg)
-                    store_bets([bet])
-                    self._agencies_that_sent_bets.add(str(bet.agency))
+                    with store_lock:
+                        store_bets([bet])
+                    with self._state_lock:
+                        self._agencies_that_sent_bets.add(str(bet.agency))
                     logging.info(f'action: apuesta_recibida | result: success | cantidad: 1')
-                    
                     self.__send_complete_message(client_sock, b"OK\n")
 
                 elif msg.startswith("FINISH_BETS#"):
                     agency = Protocol.parse_finish_bets(msg)
-                    self._agencies_finished.add(agency)
-                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)} | agencies_with_bets: {self._agencies_that_sent_bets}')
-                    
-                    if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed and len(self._agencies_that_sent_bets) > 0:
-                        self._lottery_completed = True
-                        logging.info('action: sorteo | result: success')
-                        self._process_pending_winner_queries()
-                    
+                    with self._state_lock:
+                        self._agencies_finished.add(agency)
+                        logging.info(
+                            f'action: finish_bets_received | result: success | agency: {agency} '
+                            f'| agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)} '
+                            f'| agencies_with_bets: {self._agencies_that_sent_bets}'
+                        )
+                        if (len(self._agencies_finished) == len(self._agencies_that_sent_bets)
+                            and not self._lottery_completed
+                            and len(self._agencies_that_sent_bets) > 0):
+                            self._lottery_completed = True
+                            logging.info('action: sorteo | result: success')
+                            self._process_pending_winner_queries()
                     self.__send_complete_message(client_sock, b"OK\n")
 
                 elif msg.startswith("QUERY_WINNERS#"):
                     agency = Protocol.parse_query_winners(msg)
-                    
-                    if not self._lottery_completed:
-                        self._pending_winners_queries.append((client_sock, agency))
-                        logging.info(
-                            f"action: query_winners_pending | result: in_progress | agency: {agency} | pending_count: {len(self._pending_winners_queries)}"
-                        )
-                        self._active_connections.discard(client_sock)  
-                        keep_open = True
-                        return  
-                    else:
-                        winners = self._get_winners_for_agency(agency)
-                        winners_msg = Protocol.serialize_winners(winners)
-                        self.__send_complete_message(client_sock, winners_msg.encode())
-                        logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
+                    with self._state_lock:
+                        if not self._lottery_completed:
+                            self._pending_winners_queries.append((client_sock, agency))
+                            logging.info(
+                                f"action: query_winners_pending | result: in_progress | agency: {agency} "
+                                f"| pending_count: {len(self._pending_winners_queries)}"
+                            )
+                            with self._connections_lock:
+                                self._active_connections.discard(client_sock)
+                            keep_open = True
+                            return
+                        else:
+                            winners = self._get_winners_for_agency(agency)
+                    winners_msg = Protocol.serialize_winners(winners)
+                    self.__send_complete_message(client_sock, winners_msg.encode())
+                    logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
 
                 else:
                     raise ProtocolError("unknown_message_type")
@@ -172,13 +198,17 @@ class Server:
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
-            self._active_connections.discard(client_sock)
+            with self._connections_lock:
+                self._active_connections.discard(client_sock)
             if not keep_open:
                 try:
                     client_sock.close()
                     logging.info("action: close_client_connection | result: success")
                 except OSError as e:
                     logging.warning(f"action: close_client_connection | result: fail | error: {e}")
+            # Sacar este thread del set
+            with self._threads_lock:
+                self._threads.discard(threading.current_thread())
 
     def __recv_complete_message(self, client_sock, buffer_size):
         """
