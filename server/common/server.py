@@ -76,6 +76,20 @@ class Server:
                     logging.warning(f'action: close_client_connection | result: fail | error: {e}')
             self._active_connections.clear()
         
+        if self._pending_winners_queries:
+            logging.info(f'action: closing_pending_query_sockets | count: {len(self._pending_winners_queries)}')
+            for client_sock, agency in list(self._pending_winners_queries):
+                try:
+                    client_sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                try:
+                    client_sock.close()
+                    logging.info(f'action: close_pending_query_socket | result: success | agency: {agency}')
+                except OSError as e:
+                    logging.warning(f'action: close_pending_query_socket | result: fail | agency: {agency} | error: {e}')
+            self._pending_winners_queries.clear()
+
         if self._server_socket:
             try:
                 self._server_socket.shutdown(socket.SHUT_RDWR)
