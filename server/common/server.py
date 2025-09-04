@@ -102,83 +102,25 @@ class Server:
 
             try:
                 if msg.startswith("BATCH#"):
-                    bets = Protocol.parse_batch(msg)
-                    store_bets(bets)
-                    for bet in bets:
-                        self._agencies_that_sent_bets.add(str(bet.agency))
-                    logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
-                    
-                    self.__send_complete_message(client_sock, b"OK\n")
-                    
+                    self.__handle_batch_message(msg, client_sock)
                 elif msg.startswith("BET#"):
-                    bet = Protocol.parse_bet(msg)
-                    store_bets([bet])
-                    self._agencies_that_sent_bets.add(str(bet.agency))
-                    logging.info(f'action: apuesta_recibida | result: success | cantidad: 1')
-                    
-                    self.__send_complete_message(client_sock, b"OK\n")
-
+                    self.__handle_bet_message(msg, client_sock)
                 elif msg.startswith("FINISH_BETS#"):
-                    agency = Protocol.parse_finish_bets(msg)
-                    self._agencies_finished.add(agency)
-                    logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)} | agencies_with_bets: {self._agencies_that_sent_bets}')
-                    
-                    if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed and len(self._agencies_that_sent_bets) > 0:
-                        self._lottery_completed = True
-                        logging.info('action: sorteo | result: success')
-                        self._process_pending_winner_queries()
-                    
-                    self.__send_complete_message(client_sock, b"OK\n")
-
+                    self.__handle_finish_bets_message(msg, client_sock)
                 elif msg.startswith("QUERY_WINNERS#"):
-                    agency = Protocol.parse_query_winners(msg)
-                    
-                    if not self._lottery_completed:
-                        self._pending_winners_queries.append((client_sock, agency))
-                        logging.info(
-                            f"action: query_winners_pending | result: in_progress | agency: {agency} | pending_count: {len(self._pending_winners_queries)}"
-                        )
-                        self._active_connections.discard(client_sock)  
-                        keep_open = True
-                        return  
-                    else:
-                        winners = self._get_winners_for_agency(agency)
-                        winners_msg = Protocol.serialize_winners(winners)
-                        self.__send_complete_message(client_sock, winners_msg.encode())
-                        logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
-
+                    keep_open = self.__handle_query_winners_message(msg, client_sock)
+                    if keep_open:
+                        return
                 else:
                     raise ProtocolError("unknown_message_type")
                     
             except ProtocolError as e:
-                if msg.startswith("BATCH#"):
-                    try:
-                        header_line = msg.split('\n')[0]
-                        count = int(header_line.split('#')[1])
-                        logging.error(f'action: apuesta_recibida | result: fail | cantidad: {count}')
-                    except:
-                        logging.error(f'action: apuesta_recibida | result: fail | cantidad: unknown')
-                elif msg.startswith("BET#"):
-                    logging.error(f'action: apuesta_recibida | result: fail | cantidad: 1')
-                elif msg.startswith("FINISH_BETS#"):
-                    logging.error(f'action: finish_bets_received | result: fail | error: {e}')
-                elif msg.startswith("QUERY_WINNERS#"):
-                    logging.error(f'action: query_winners | result: fail | error: {e}')
-                else:
-                    logging.error(f'action: unknown_message | result: fail | error: {e}')
-                
-                self.__send_complete_message(client_sock, b"ERROR\n")
+                self.__handle_protocol_error(msg, e, client_sock)
 
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
-            self._active_connections.discard(client_sock)
-            if not keep_open:
-                try:
-                    client_sock.close()
-                    logging.info("action: close_client_connection | result: success")
-                except OSError as e:
-                    logging.warning(f"action: close_client_connection | result: fail | error: {e}")
+            self.__handle_connection_cleanup(client_sock, keep_open)
 
     def __recv_complete_message(self, client_sock, buffer_size):
         """
@@ -254,6 +196,124 @@ class Server:
         c.settimeout(None)
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
         return c
+    
+    def __handle_batch_message(self, msg: str, client_sock):
+        """
+        Handle BATCH# message type.
+        
+        Args:
+            msg (str): The BATCH message to process
+            client_sock: The client socket to send response to
+        """
+        bets = Protocol.parse_batch(msg)
+        store_bets(bets)
+        for bet in bets:
+            self._agencies_that_sent_bets.add(str(bet.agency))
+        logging.info(f'action: apuesta_recibida | result: success | cantidad: {len(bets)}')
+        self.__send_complete_message(client_sock, b"OK\n")
+    
+    def __handle_bet_message(self, msg: str, client_sock):
+        """
+        Handle BET# message type.
+        
+        Args:
+            msg (str): The BET message to process
+            client_sock: The client socket to send response to
+        """
+        bet = Protocol.parse_bet(msg)
+        store_bets([bet])
+        self._agencies_that_sent_bets.add(str(bet.agency))
+        logging.info(f'action: apuesta_recibida | result: success | cantidad: 1')
+        self.__send_complete_message(client_sock, b"OK\n")
+    
+    def __handle_finish_bets_message(self, msg: str, client_sock):
+        """
+        Handle FINISH_BETS# message type.
+        
+        Args:
+            msg (str): The FINISH_BETS message to process
+            client_sock: The client socket to send response to
+        """
+        agency = Protocol.parse_finish_bets(msg)
+        self._agencies_finished.add(agency)
+        logging.info(f'action: finish_bets_received | result: success | agency: {agency} | agencies_finished: {len(self._agencies_finished)}/{len(self._agencies_that_sent_bets)} | agencies_with_bets: {self._agencies_that_sent_bets}')
+        
+        if len(self._agencies_finished) == len(self._agencies_that_sent_bets) and not self._lottery_completed and len(self._agencies_that_sent_bets) > 0:
+            self._lottery_completed = True
+            logging.info('action: sorteo | result: success')
+            self._process_pending_winner_queries()
+        
+        self.__send_complete_message(client_sock, b"OK\n")
+    
+    def __handle_query_winners_message(self, msg: str, client_sock) -> bool:
+        """
+        Handle QUERY_WINNERS# message type.
+        
+        Args:
+            msg (str): The QUERY_WINNERS message to process
+            client_sock: The client socket to send response to
+            
+        Returns:
+            bool: True if connection should be kept open (pending query), False otherwise
+        """
+        agency = Protocol.parse_query_winners(msg)
+        
+        if not self._lottery_completed:
+            self._pending_winners_queries.append((client_sock, agency))
+            logging.info(
+                f"action: query_winners_pending | result: in_progress | agency: {agency} | pending_count: {len(self._pending_winners_queries)}"
+            )
+            self._active_connections.discard(client_sock)  
+            return True
+        else:
+            winners = self._get_winners_for_agency(agency)
+            winners_msg = Protocol.serialize_winners(winners)
+            self.__send_complete_message(client_sock, winners_msg.encode())
+            logging.info(f'action: winners_sent | result: success | agency: {agency} | count: {len(winners)}')
+            return False
+    
+    def __handle_protocol_error(self, msg: str, error: ProtocolError, client_sock):
+        """
+        Handle protocol errors by logging appropriate messages and sending error response.
+        
+        Args:
+            msg (str): The original message that caused the error
+            error (ProtocolError): The protocol error that occurred
+            client_sock: The client socket to send error response to
+        """
+        if msg.startswith("BATCH#"):
+            try:
+                header_line = msg.split('\n')[0]
+                count = int(header_line.split('#')[1])
+                logging.error(f'action: apuesta_recibida | result: fail | cantidad: {count}')
+            except:
+                logging.error(f'action: apuesta_recibida | result: fail | cantidad: unknown')
+        elif msg.startswith("BET#"):
+            logging.error(f'action: apuesta_recibida | result: fail | cantidad: 1')
+        elif msg.startswith("FINISH_BETS#"):
+            logging.error(f'action: finish_bets_received | result: fail | error: {error}')
+        elif msg.startswith("QUERY_WINNERS#"):
+            logging.error(f'action: query_winners | result: fail | error: {error}')
+        else:
+            logging.error(f'action: unknown_message | result: fail | error: {error}')
+        
+        self.__send_complete_message(client_sock, b"ERROR\n")
+    
+    def __handle_connection_cleanup(self, client_sock, keep_open: bool):
+        """
+        Handle cleanup operations for client connection.
+        
+        Args:
+            client_sock: The client socket to clean up
+            keep_open (bool): Whether to keep the socket open
+        """
+        self._active_connections.discard(client_sock)
+        if not keep_open:
+            try:
+                client_sock.close()
+                logging.info("action: close_client_connection | result: success")
+            except OSError as e:
+                logging.warning(f"action: close_client_connection | result: fail | error: {e}")
     
     def _get_winners_for_agency(self, agency: str) -> list[str]:
         """
