@@ -66,7 +66,6 @@ class Server:
     def _cleanup(self):
         logging.info('action: server_shutdown | result: in_progress')
 
-        # Close active connections
         with self._connections_lock:
             for client_sock in list(self._active_connections):
                 try:
@@ -80,23 +79,6 @@ class Server:
                     logging.warning(f'action: close_client_connection | result: fail | error: {e}')
             self._active_connections.clear()
 
-        # Close pending winner query connections
-        with self._state_lock:
-            pending_sockets = [sock for sock, _ in self._pending_winners_queries]
-            for client_sock in pending_sockets:
-                try:
-                    client_sock.shutdown(socket.SHUT_RDWR)
-                except OSError:
-                    pass
-                try:
-                    client_sock.close()
-                    logging.info('action: close_pending_connection | result: success')
-                except OSError as e:
-                    logging.warning(f'action: close_pending_connection | result: fail | error: {e}')
-            self._pending_winners_queries.clear()
-            logging.info(f'action: cleanup_pending_queries | result: success | count: {len(pending_sockets)}')
-
-        # Close server socket
         if self._server_socket:
             try:
                 self._server_socket.shutdown(socket.SHUT_RDWR)
@@ -108,18 +90,10 @@ class Server:
             except OSError as e:
                 logging.warning(f'action: close_server_socket | result: fail | error: {e}')
 
-        # Wait for threads to finish
         with self._threads_lock:
             threads_to_join = list(self._threads)
-        
         for t in threads_to_join:
             t.join(timeout=2.0)  # timeout para no colgar el shutdown
-            if t.is_alive():
-                logging.warning(f'action: thread_join | result: timeout | thread: {t.name}')
-        
-        # Clear threads set
-        with self._threads_lock:
-            self._threads.clear()
 
         logging.info('action: server_shutdown | result: success')
 
@@ -135,16 +109,7 @@ class Server:
 
         keep_open = False
         try:
-            # Check if shutdown was requested before processing
-            if self._shutdown_requested:
-                return
-                
             msg = self.__recv_complete_message(client_sock, 1024)
-            
-            # Check again after potentially long recv operation
-            if self._shutdown_requested:
-                return
-                
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg_size: {len(msg)} bytes | msg_type: {msg.split("#")[0] if "#" in msg else msg.split()[0] if msg else "empty"}')
 
@@ -166,9 +131,7 @@ class Server:
                 self.__handle_protocol_error(msg, e, client_sock)
 
         except OSError as e:
-            # Don't log as error if it's due to shutdown
-            if not self._shutdown_requested:
-                logging.error(f"action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             self.__handle_connection_cleanup(client_sock, keep_open)
 
@@ -338,17 +301,14 @@ class Server:
         """
         agency = Protocol.parse_query_winners(msg)
         with self._state_lock:
-            # Check if shutdown is in progress
-            if self._shutdown_requested:
-                return False
-                
             if not self._lottery_completed:
                 self._pending_winners_queries.append((client_sock, agency))
                 logging.info(
                     f"action: query_winners_pending | result: in_progress | agency: {agency} "
                     f"| pending_count: {len(self._pending_winners_queries)}"
                 )
-                # Don't remove from active_connections yet - keep it for cleanup
+                with self._connections_lock:
+                    self._active_connections.discard(client_sock)
                 return True
             else:
                 winners = self._get_winners_for_agency(agency)
@@ -393,15 +353,10 @@ class Server:
             client_sock: The client socket to clean up
             keep_open (bool): Whether to keep the socket open
         """
-        if keep_open:
-            # For pending queries, remove from active connections but don't close socket yet
-            with self._connections_lock:
-                self._active_connections.discard(client_sock)
-        else:
-            # Normal cleanup - remove from active connections and close socket
-            with self._connections_lock:
-                self._active_connections.discard(client_sock)
-            
+        with self._connections_lock:
+            self._active_connections.discard(client_sock)
+        
+        if not keep_open:
             try:
                 client_sock.close()
                 logging.info("action: close_client_connection | result: success")
@@ -415,26 +370,10 @@ class Server:
         """
         Process all pending winner queries after the lottery is completed.
         """
-        with self._state_lock:
-            queries_to_process = list(self._pending_winners_queries)
-            self._pending_winners_queries.clear()
+        logging.info(f"action: processing_pending_queries | result: success | count: {len(self._pending_winners_queries)}")
         
-        logging.info(f"action: processing_pending_queries | result: success | count: {len(queries_to_process)}")
-        
-        for client_sock, agency in queries_to_process:
+        for client_sock, agency in self._pending_winners_queries:
             try:
-                # Check if shutdown was requested
-                if self._shutdown_requested:
-                    try:
-                        client_sock.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
-                    try:
-                        client_sock.close()
-                    except OSError:
-                        pass
-                    continue
-                
                 winners = self._get_winners_for_agency(agency)
                 winners_msg = Protocol.serialize_winners(winners)
                 self.__send_complete_message(client_sock, winners_msg.encode())
@@ -453,7 +392,9 @@ class Server:
                     pass
                 try:
                     client_sock.close()
-                except OSError:
+                except:
                     pass
+        
+        self._pending_winners_queries.clear()
         
     
