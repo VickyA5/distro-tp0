@@ -178,3 +178,159 @@ Se espera que se redacte una sección del README en donde se indique cómo ejecu
 Se proveen [pruebas automáticas](https://github.com/7574-sistemas-distribuidos/tp0-tests) de caja negra. Se exige que la resolución de los ejercicios pase tales pruebas, o en su defecto que las discrepancias sean justificadas y discutidas con los docentes antes del día de la entrega. El incumplimiento de las pruebas es condición de desaprobación, pero su cumplimiento no es suficiente para la aprobación. Respetar las entradas de log planteadas en los ejercicios, pues son las que se chequean en cada uno de los tests.
 
 La corrección personal tendrá en cuenta la calidad del código entregado y casos de error posibles, se manifiesten o no durante la ejecución del trabajo práctico. Se pide a los alumnos leer atentamente y **tener en cuenta** los criterios de corrección informados  [en el campus](https://campusgrado.fi.uba.ar/mod/page/view.php?id=73393).
+
+# Ejercicio 1
+
+Para este ejercicio opté por usar un subscript python llamado `generador-compose.py` para facilitar la creación del archivo yaml. El archivo lo creo formateando un yaml de forma manual con strings de python y un ciclo for para iterar sobre la cantidad de clientes que haya ingresado el usuario como parámetro.
+
+Para el docker-compose final, replico las mismas configuraciones del client1 para ser consistente (misma imagen, variables de entorno, etc).
+
+Además, modifiqué el cliente y el servidor para solucionar los short-write y short-read, y cerrar los sockets para que no queden recursos abiertos al finalizar el programa.
+
+### Uso
+
+Primero se deben hacer ejecutables ambos scripts:
+
+```bash
+chmod +x generar-compose.sh
+chmod +x generador-compose.py
+```
+
+Luego, ejecutar con la el nombre de archivo de salida y cantidad de clientes deseados:
+
+```bash
+./generar-compose.sh <output_file> <n>
+```
+
+# Ejercicio 2
+
+Para resolver este ejercicio utilicé volúmenes de docker con los archivos docker-compose para que monte los archivos de configuración desde el host hacia el contenedor. De esta forma, al hacer cambios en estos archivos que están definidos como volúmenes no se debe reconstruir las imágenes. Para lograrlo, modifiqué los docker-compose y además el script `generador-compose.py` para que se agreguen las líneas 
+
+```
+    volumes:
+      - ./server/config.ini:/config.ini
+```
+
+en el contenedor del servidor, y las líneas
+
+```
+    volumes:
+      - ./client/config.yaml:/config.yaml
+```
+
+en el contenedor de los clientes.
+
+Para probarlo, se pueden seguir los siguientes pasos:
+
+1. Primero ver las configuraciones actuales
+
+```bash
+cat client/config.yaml
+cat server/config.ini
+```
+
+2. Construir las imágenes 
+
+```bash
+make docker-image
+```
+
+3. Levantar el sistema
+
+```bash
+make docker-compose-up
+```
+
+4. Modificar las configuraciones en los archivos de configuración del servidor y/o de los clientes que se deseen, sin reconstruir
+
+5. Reiniciar los contenedores
+
+```bash
+docker-compose -f docker-compose-dev.yaml restart
+```
+
+Aclaración: este comando no reconstruye la imagen, simplemente detiene el proceso que está corriendo dentro del contenedor y lo vuelve a iniciar con la misma imagen. Esto es necesario ya que la configuración puede ya estar cargada en memoria.
+
+6. Verificar que los cambios se aplicaron, depende de qué configuración se haya modificado.
+
+# Ejercicio 3
+
+Para este ejercicio creé un script que obtiene la configuración, crea y elimina automáticamente un contenedor que se conecta a la red del servidor y utiliza el comando netcat para enviar un mensaje de prueba al servidor. 
+
+Uso:
+
+```bash
+chmod +x validar-echo-server.sh
+./validar-echo-server.sh
+```
+
+# Ejercicio 4
+
+Debido a que había un TODO en el código del servidor que indicaba hacer un graceful shutdow, ya lo había implementado desde el ejercicio 1 (resolví los TODO en un principio). En esta rama, lo que hice diferente fue agregar los logs correspondientes al server e implementar el graceful shutdown del lado del cliente. 
+
+Para resolverlo, implementé el manejo de señales y agregué funciones de closeup que cierran los sockets.
+
+# Ejercicio 5
+
+Para esta parte opté por implementar un protocolo que utiliza al caracter `#` como delimitador para diferenciar los diferentes campos. El formato es el siguiente:
+
+`BET#<AGENCIA>#<FIRST_NAME>#<LAST_NAME>#<DOCUMENT>#<BIRTHDATE>#<NUMBER>`
+
+Incluí una cabecera del tipo de mensaje "BET" para que el protocolo sea más robusto y extendible para poder reutilizarlo en los próximos ejercicios.
+
+Con respecto al protocolo, lo modularicé en archivos diferentes en el servidor y en el cliente para separar responsabilidades. Los mensajes son strings y el servidor, al decodificarlos, los lee como utf-8.
+
+Además, modifiqué el script `generador-compose.py` para que establezca las variables de entorno utilizadas en este ejercicio.
+
+# Ejercicio 6
+
+Para resolver el problema de enviar las apuestas de a batches, mantuve el protocolo del ejercicio anterior pero agregándole una cabecera diferente que representa el tipo de operación y la cantidad de bets:
+
+```console
+BATCH#<count>
+BET#<agency>#<first_name>#<last_name>#<document>#<birthdate>#<number>
+BET#<agency>#<first_name>#<last_name>#<document>#<birthdate>#<number>
+...
+```
+
+Si hay más de una apuesta, se agregan al final, cada una respetando el mismo protocolo del ejercicio anterior.
+
+Cada cliente lee únicamente su archivo de apuestas específico (`./data/agency-<N>.csv`), el cual se inyecta en el contenedor como volumen. Se usa la variable de entorno maxAMount para definir el tamaño máximo del batch, y si hay más apuestas que dicho límite entonces se dividen en múltiples batches. Este tamaño máximo se eligió teniendo en cuenta los archivos de muestra y dejando cierto margen. La lectura la realiza de a batches a medida que los va enviando al servidor para evitar levantar todo el archivo en memoria.
+
+El servidor primero detecta si el mensaje comienza con `BATCH#` y extrae el número de apuestas esperadas y una lista de mensajes BET individuales. Luego, se verifica que la cantidad declarada coincida con las apuestas recibidas, y se las almacena con la función provista por la cátedra `parse_bet()`.
+Finalmente, en caso de éxito envía una respuesta de `OK` si pudo procesar correctamente todas las apuestas.
+
+Además, modifiqué el archivo `generador-compose.py` para cumplir con las características de este ejercicio.
+
+# Ejercicio 7
+
+Se mantiene el protocolo utilizado anteriormente, incorporando nuevos tipos de mensajes. En primer lugar, las agencias se conectan y envían sus apuestas en lotes (`BATCH`) como antes. Cuando una agencia finaliza el envío de todas sus apuestas, lo indica mediante un mensaje de la forma `FINISH_BETS#agency`. El servidor registra a esa agencia como finalizada, y una vez que todas las agencias han notificado su finalización, procede a realizar el sorteo.
+
+Posteriormente, las agencias consultan los resultados del sorteo utilizando `QUERY_WINNERS#agency\n`. Si una consulta de este tipo llega antes de que se realice el sorteo, el servidor la marca como pendiente. En cambio, si el sorteo ya fue realizado, el servidor responde inmediatamente con los ganadores correspondientes a esa agencia.
+
+Una vez efectuado el sorteo, el servidor responde también a todas las consultas que habían quedado pendientes, enviando los DNIs de los ganadores en el siguiente formato:
+
+
+`WINNERS#<count>#<DNI1>#<DNI2> ...`
+
+
+Los sockets asociados a las agencias que quedan en estado pendiente se mantienen abiertos hasta que el servidor pueda responder con los resultados del sorteo, y se cierran únicamente al finalizar dicho proceso. De esta manera se evita responder con información parcial y se asegura que cada cliente reciba únicamente los ganadores correspondientes a su propia agencia.
+
+Además, se garantiza el cierre ordenado de todos los recursos: los sockets que no quedan en estado pendiente se cierran al finalizar su ciclo de comunicación, mientras que aquellos que esperan resultados son cerrados explícitamente luego de que el servidor envía la respuesta definitiva.
+
+
+# Ejercicio 8
+
+El servidor está diseñado para aceptar y procesar múltiples conexiones de clientes en paralelo. Cada conexión aceptada se maneja en un nuevo thread, lo que permite que varias agencias envíen apuestas o consultas al mismo tiempo sin bloquear el flujo principal. Si bien python posee un mutex en el interpreter (GIL) que limita el potencial de la concurrencia en ciertos escenarios, la actividad del servidor es I/O intensive. Y este es justamente uno de los casos que quedan por fuera de las limitaciones del GIL (referencia: [GlobalInterpreterLock](https://wiki.python.org/moin/GlobalInterpreterLock)). Además, me pareció adecuado utilizar threads en lugar de procesos ya que los procesos agregan un overhead que para este trabaj práctico no hace falta pagar.
+
+El ciclo es el siguiente: el servidor acepta un socket y lanza un thread para atenderlo. Dentro del thread, se recibe el mensaje completo y se procesa según el tipo (BATCH, BET, FINISH_BETS, QUERY_WINNERS). Cada acceso a estructuras compartidas o al archivo está protegido con su lock correspondiente. Al finalizar la comunicación, el socket se cierra y el thread se elimina de la lista de threads activos. Además, se incluyó como parte del cleanup() implementado en los ejercicios anteriores un **join** a los threads de clientes.
+
+Para evitar condiciones de carrera y garantizar la consistencia de los datos, utilicé distintos locks según el recurso compartido:
+
+- `store_lock`: protege las llamadas a store_bets, ya que este método escribe en un archivo. De esta forma se asegura que nunca haya escrituras concurrentes en el mismo archivo.
+
+- `connections_lock`: protege la estructura _active_connections, donde se registran los sockets de clientes activos.
+
+- `threads_lock`: protege el conjunto _threads, que guarda referencias a los hilos en ejecución, permitiendo hacer join() ordenadamente al apagar el servidor.
+
+- `state_lock`: protege las estructuras de negocio compartidas (_agencies_that_sent_bets, _agencies_finished, _lottery_completed, _pending_winners_queries)
