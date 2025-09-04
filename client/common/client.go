@@ -77,41 +77,53 @@ func (c *Client) cleanup() {
 	}
 }
 
-// StartClientLoop Load bets from CSV file and send them in batches
+// StartClientLoop Load bets from CSV file and send them in batches using streaming approach
 func (c *Client) StartClientLoop() {
-	bets, err := c.loadBetsFromCSV()
+	filename := fmt.Sprintf("/.data/agency-%s.csv", c.config.ID)
+	file, err := os.Open(filename)
 	if err != nil {
-		log.Errorf("action: load_csv | result: fail | client_id: %v | error: %v", c.config.ID, err)
+		log.Errorf("action: open_csv | result: fail | client_id: %v | error: %v", c.config.ID, err)
 		return
 	}
+	defer file.Close()
 
-	log.Infof("action: load_csv | result: success | client_id: %v | total_bets: %d", c.config.ID, len(bets))
-
+	reader := csv.NewReader(file)
 	batchSize := c.config.BatchMaxAmount
-	totalBets := len(bets)
-	
-	for i := 0; i < totalBets; i += batchSize {
-		end := i + batchSize
-		if end > totalBets {
-			end = totalBets
-		}
-		
-		batch := bets[i:end]
-		
-		err := c.sendBatch(batch)
+	batchCount := 0
+	totalBetsSent := 0
+
+	log.Infof("action: start_streaming | result: success | client_id: %v | batch_size: %d", c.config.ID, batchSize)
+
+	for {
+		batch, err := c.readNextBatch(reader, batchSize)
 		if err != nil {
-			log.Errorf("action: send_batch | result: fail | client_id: %v | batch_start: %d | batch_size: %d | error: %v", 
-				c.config.ID, i, len(batch), err)
+			log.Errorf("action: read_batch | result: fail | client_id: %v | batch_count: %d | error: %v", 
+				c.config.ID, batchCount, err)
 			return
 		}
-		
-		if end < totalBets {
+
+		if len(batch) == 0 {
+			break // No more data to read
+		}
+
+		err = c.sendBatch(batch)
+		if err != nil {
+			log.Errorf("action: send_batch | result: fail | client_id: %v | batch_count: %d | batch_size: %d | error: %v", 
+				c.config.ID, batchCount, len(batch), err)
+			return
+		}
+
+		batchCount++
+		totalBetsSent += len(batch)
+
+		// Sleep between batches if there might be more data
+		if len(batch) == batchSize {
 			time.Sleep(c.config.LoopPeriod)
 		}
 	}
 
-	log.Infof("action: loop_finished | result: success | client_id: %v | total_batches_sent: %d", 
-		c.config.ID, (totalBets+batchSize-1)/batchSize)
+	log.Infof("action: loop_finished | result: success | client_id: %v | total_batches_sent: %d | total_bets_sent: %d", 
+		c.config.ID, batchCount, totalBetsSent)
 
 	// Notify server that this agency finished sending bets
 	err = c.notifyFinishBets()
@@ -128,22 +140,14 @@ func (c *Client) StartClientLoop() {
 	}
 }
 
-// loadBetsFromCSV loads bets from the CSV file for this agency
-func (c *Client) loadBetsFromCSV() ([]Bet, error) {
-	filename := fmt.Sprintf("/.data/agency-%s.csv", c.config.ID)
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var bets []Bet
-	reader := csv.NewReader(file)
+// readNextBatch reads the next batch of bets from the CSV reader
+func (c *Client) readNextBatch(reader *csv.Reader, batchSize int) ([]Bet, error) {
+	var batch []Bet
 	
-	for {
+	for len(batch) < batchSize {
 		record, err := reader.Read()
 		if err == io.EOF {
-			break
+			break // End of file reached
 		}
 		if err != nil {
 			return nil, err
@@ -161,13 +165,13 @@ func (c *Client) loadBetsFromCSV() ([]Bet, error) {
 			Birthdate: record[3],
 			Number:    record[4],
 		}
-		bets = append(bets, bet)
+		batch = append(batch, bet)
 	}
 	
-	return bets, nil
+	return batch, nil
 }
 
-// sendBatch sends a batch of bets to the server and waits for response
+// sendBatch sends a batch of bets to the server without waiting for response
 func (c *Client) sendBatch(bets []Bet) error {
 	err := c.createClientSocket()
 	if err != nil {
@@ -190,22 +194,10 @@ func (c *Client) sendBatch(bets []Bet) error {
 		totalWritten += n
 	}
 
-	response, err := c.receiveResponse()
-	if err != nil {
-		log.Errorf("action: receive_response | result: fail | client_id: %v | error: %v",
-			c.config.ID, err)
-		return err
-	}
-
-	if response == "OK" {
-		log.Infof("action: batch_enviado | result: success | cantidad: %d", len(bets))
-	} else {
-		log.Errorf("action: batch_enviado | result: fail | cantidad: %d | response: %s", len(bets), response)
-	 	return fmt.Errorf("server rejected batch: %s", response)
-	}
-
+	log.Infof("action: batch_enviado | result: success | cantidad: %d", len(bets))
 	return nil
 }
+
 
 // receiveResponse waits for server response
 func (c *Client) receiveResponse() (string, error) {
