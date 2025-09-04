@@ -117,7 +117,6 @@ func (c *Client) StartClientLoop() {
 		batchCount++
 		totalBetsSent += len(batch)
 
-		// Sleep between batches if there might be more data
 		if len(batch) == batchSize {
 			time.Sleep(c.config.LoopPeriod)
 		}
@@ -156,46 +155,6 @@ func (c *Client) readNextBatch(reader *csv.Reader, batchSize int) ([]Bet, error)
 	}
 	
 	return batch, nil
-}
-
-// loadBetsFromCSV loads bets from the CSV file for this agency (DEPRECATED - use streaming approach)
-// This method is kept for backward compatibility but should not be used for large files
-func (c *Client) loadBetsFromCSV() ([]Bet, error) {
-	filename := fmt.Sprintf("/.data/agency-%s.csv", c.config.ID)
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var bets []Bet
-	reader := csv.NewReader(file)
-	
-	for {
-		record, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-		
-		if len(record) != 5 {
-			continue // Skip malformed records
-		}
-		
-		bet := Bet{
-			Agency:    c.config.ID,
-			FirstName: strings.Split(record[0], " ")[0],
-			LastName:  strings.Join(strings.Split(record[0], " ")[1:], " ") + " " + record[1],
-			Document:  record[2],
-			Birthdate: record[3],
-			Number:    record[4],
-		}
-		bets = append(bets, bet)
-	}
-	
-	return bets, nil
 }
 
 // sendBatch sends a batch of bets to the server without waiting for response

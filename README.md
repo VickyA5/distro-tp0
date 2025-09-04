@@ -278,6 +278,8 @@ Para esta parte opté por implementar un protocolo que utiliza al caracter `#` c
 
 Incluí una cabecera del tipo de mensaje "BET" para que el protocolo sea más robusto y extendible para poder reutilizarlo en los próximos ejercicios.
 
+Para la lectura de archivos de apuestas, el cliente lee de a batches a medida que los va enviando, para evitar levantar todo el archivo en memoria.
+
 Con respecto al protocolo, lo modularicé en archivos diferentes en el servidor y en el cliente para separar responsabilidades. Los mensajes son strings y el servidor, al decodificarlos, los lee como utf-8.
 
 Además, modifiqué el script `generador-compose.py` para que establezca las variables de entorno utilizadas en este ejercicio.
