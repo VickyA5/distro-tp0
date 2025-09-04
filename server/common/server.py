@@ -90,6 +90,18 @@ class Server:
             except OSError as e:
                 logging.warning(f'action: close_server_socket | result: fail | error: {e}')
 
+        for client_sock, agency in list(self._pending_winners_queries):
+            try:
+                client_sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                client_sock.close()
+                logging.info(f'action: close_pending_query_socket | result: success | agency: {agency}')
+            except OSError as e:
+                logging.warning(f'action: close_pending_query_socket | result: fail | agency: {agency} | error: {e}')
+        self._pending_winners_queries.clear()
+
         with self._threads_lock:
             threads_to_join = list(self._threads)
         for t in threads_to_join:
