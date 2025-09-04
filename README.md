@@ -295,7 +295,7 @@ BET#<agency>#<first_name>#<last_name>#<document>#<birthdate>#<number>
 
 Si hay más de una apuesta, se agregan al final, cada una respetando el mismo protocolo del ejercicio anterior.
 
-Cada cliente lee únicamente su archivo de apuestas específico (`./data/agency-<N>.csv`), el cual se inyecta en el contenedor como volumen. Se usa la variable de entorno maxAMount para definir el tamaño máximo del batch, y si hay más apuestas que dicho límite entonces se dividen en múltiples batches. Este tamaño máximo se eligió teniendo en cuenta los archivos de muestra y dejando cierto margen.
+Cada cliente lee únicamente su archivo de apuestas específico (`./data/agency-<N>.csv`), el cual se inyecta en el contenedor como volumen. Se usa la variable de entorno maxAMount para definir el tamaño máximo del batch, y si hay más apuestas que dicho límite entonces se dividen en múltiples batches. Este tamaño máximo se eligió teniendo en cuenta los archivos de muestra y dejando cierto margen. La lectura la realiza de a batches a medida que los va enviando al servidor para evitar levantar todo el archivo en memoria.
 
 El servidor primero detecta si el mensaje comienza con `BATCH#` y extrae el número de apuestas esperadas y una lista de mensajes BET individuales. Luego, se verifica que la cantidad declarada coincida con las apuestas recibidas, y se las almacena con la función provista por la cátedra `parse_bet()`.
 Finalmente, en caso de éxito envía una respuesta de `OK` si pudo procesar correctamente todas las apuestas.
