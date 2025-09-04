@@ -319,3 +319,18 @@ Los sockets asociados a las agencias que quedan en estado pendiente se mantienen
 Además, se garantiza el cierre ordenado de todos los recursos: los sockets que no quedan en estado pendiente se cierran al finalizar su ciclo de comunicación, mientras que aquellos que esperan resultados son cerrados explícitamente luego de que el servidor envía la respuesta definitiva.
 
 
+# Ejercicio 8
+
+El servidor está diseñado para aceptar y procesar múltiples conexiones de clientes en paralelo. Cada conexión aceptada se maneja en un nuevo thread, lo que permite que varias agencias envíen apuestas o consultas al mismo tiempo sin bloquear el flujo principal. Si bien python posee un mutex en el interpreter (GIL) que limita el potencial de la concurrencia en ciertos escenarios, la actividad del servidor es I/O intensive. Y este es justamente uno de los casos que quedan por fuera de las limitaciones del GIL (referencia: [GlobalInterpreterLock](https://wiki.python.org/moin/GlobalInterpreterLock)). Además, me pareció adecuado utilizar threads en lugar de procesos ya que los procesos agregan un overhead que para este trabaj práctico no hace falta pagar.
+
+El ciclo es el siguiente: el servidor acepta un socket y lanza un thread para atenderlo. Dentro del thread, se recibe el mensaje completo y se procesa según el tipo (BATCH, BET, FINISH_BETS, QUERY_WINNERS). Cada acceso a estructuras compartidas o al archivo está protegido con su lock correspondiente. Al finalizar la comunicación, el socket se cierra y el thread se elimina de la lista de threads activos. Además, se incluyó como parte del cleanup() implementado en los ejercicios anteriores un **join** a los threads de clientes.
+
+Para evitar condiciones de carrera y garantizar la consistencia de los datos, utilicé distintos locks según el recurso compartido:
+
+- `store_lock`: protege las llamadas a store_bets, ya que este método escribe en un archivo. De esta forma se asegura que nunca haya escrituras concurrentes en el mismo archivo.
+
+- `connections_lock`: protege la estructura _active_connections, donde se registran los sockets de clientes activos.
+
+- `threads_lock`: protege el conjunto _threads, que guarda referencias a los hilos en ejecución, permitiendo hacer join() ordenadamente al apagar el servidor.
+
+- `state_lock`: protege las estructuras de negocio compartidas (_agencies_that_sent_bets, _agencies_finished, _lottery_completed, _pending_winners_queries)
