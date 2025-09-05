@@ -200,12 +200,20 @@ func (c *Client) sendBatch(bets []Bet) error {
 
 // receiveResponse waits for server response
 func (c *Client) receiveResponse() (string, error) {
-	buffer := make([]byte, 1024)
-	n, err := c.conn.Read(buffer)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(buffer[:n])), nil
+    buffer := make([]byte, 1024)
+    var response strings.Builder
+
+    for {
+        n, err := c.conn.Read(buffer)
+        if err != nil {
+            return "", err
+        }
+        response.Write(buffer[:n])
+        if strings.Contains(response.String(), "\n") {
+            break
+        }
+    }
+    return strings.TrimSpace(response.String()), nil
 }
 
 // notifyFinishBets sends a FINISH_BETS message to notify the server

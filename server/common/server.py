@@ -149,48 +149,47 @@ class Server:
 
     def __recv_complete_message(self, client_sock, buffer_size):
         """
-        Receive complete message handling short-reads
-        
-        For BATCH messages, continues receiving until all expected BET lines are received
-        For other messages (BET, FINISH_BETS, QUERY_WINNERS), continues until newline is found
+        Recibe un mensaje completo del cliente manejando short-reads.
+
+        - Mensajes normales (BET, FINISH_BETS, QUERY_WINNERS): se leen hasta '\n'.
+        - Mensajes BATCH: se leen hasta juntar la cantidad de BETs indicada en el header
+        y que el último mensaje termine en '\n'.
         """
         message = b''
         expected_bets = None
-        received_bets = 0
-        
+
         while True:
             chunk = client_sock.recv(buffer_size)
             if not chunk:  
                 break
             message += chunk
-            
+
             try:
                 decoded = message.decode('utf-8')
-                lines = decoded.split('\n')
-                
-                if decoded.startswith('BATCH#') and expected_bets is None:
-                    try:
-                        header_parts = lines[0].split('#')
-                        if len(header_parts) >= 2:
-                            expected_bets = int(header_parts[1])
-                    except (ValueError, IndexError):
-                        if b'\n' in message:
-                            break
-                        continue
-                
-                if expected_bets is not None:
-                    received_bets = sum(1 for line in lines[1:] if line.strip().startswith('BET#'))
-                    
-                    if received_bets >= expected_bets:
-                        break
-                else:
-                    if b'\n' in message:
-                        break
-                        
             except UnicodeDecodeError:
                 continue
-        
-        return message.rstrip().decode('utf-8')
+
+            lines = decoded.split('\n')
+
+            if decoded.startswith('BATCH#'):
+                if expected_bets is None:
+                    header_parts = lines[0].split('#')
+                    if len(header_parts) >= 2:
+                        try:
+                            expected_bets = int(header_parts[1])
+                        except ValueError:
+                            pass  
+
+                if expected_bets is not None:
+                    bet_lines = [l for l in lines[1:] if l.strip().startswith('BET#')]
+                    if len(bet_lines) >= expected_bets and decoded.endswith('\n'):
+                        break
+            else:
+                if decoded.endswith('\n'):
+                    break
+
+        return message.decode('utf-8').rstrip('\n')
+
 
     def __send_complete_message(self, client_sock, message):
         """
