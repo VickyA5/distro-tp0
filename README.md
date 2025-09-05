@@ -334,3 +334,77 @@ Para evitar condiciones de carrera y garantizar la consistencia de los datos, ut
 - `threads_lock`: protege el conjunto _threads, que guarda referencias a los hilos en ejecución, permitiendo hacer join() ordenadamente al apagar el servidor.
 
 - `state_lock`: protege las estructuras de negocio compartidas (_agencies_that_sent_bets, _agencies_finished, _lottery_completed, _pending_winners_queries)
+
+# Corrección
+
+- Cliente:
+
+```go
+func (c *Client) receiveResponse() (string, error) {
+    buffer := make([]byte, 1024)
+    var response strings.Builder
+
+    for {
+        n, err := c.conn.Read(buffer)
+        if err != nil {
+            return "", err
+        }
+        response.Write(buffer[:n])
+        if strings.Contains(response.String(), "\n") {
+            break
+        }
+    }
+    return strings.TrimSpace(response.String()), nil
+}
+```
+En el cliente había un short-read en la función `receiveResponse()`, pero ahora lee hasta encontrarse con un "\n" para considerar que recibió el mensaje completo, y en caso de no encontrarlo, itera y vuelve a leer, escribiendo lo que va recibiendo en el buffer.
+
+- Servidor
+
+```python
+    def __recv_complete_message(self, client_sock, buffer_size):
+        message = b''
+        expected_bets = None
+
+        while True:
+            chunk = client_sock.recv(buffer_size)
+            if not chunk:  
+                break
+            message += chunk
+
+            try:
+                decoded = message.decode('utf-8')
+            except UnicodeDecodeError:
+                continue
+
+            lines = decoded.split('\n')
+
+            if decoded.startswith('BATCH#'):
+                if expected_bets is None:
+                    header_parts = lines[0].split('#')
+                    if len(header_parts) >= 2:
+                        try:
+                            expected_bets = int(header_parts[1])
+                        except ValueError:
+                            pass  
+
+                if expected_bets is not None:
+                    bet_lines = [l for l in lines[1:] if l.strip().startswith('BET#')]
+                    if len(bet_lines) >= expected_bets and decoded.endswith('\n'):
+                        break
+            else:
+                if decoded.endswith('\n'):
+                    break
+
+        return message.decode('utf-8').rstrip('\n')
+```
+
+El servidor ahora maneja el caso de recibir una cantidad de caracteres que genere un error al hacer `.decode('utf-8')`, situación en la que vuelve a iterar y vuelve a leer sumando lo nuevo que lea. 
+
+El servidor a lo que lee lo va acumulando en un buffer de bytes. En cada vuelta del loop intenta decodificar esos bytes a texto y, una vez decodificado, lo parte en líneas usando el salto de línea como separador. La primera línea corresponde al encabezado del batch, que indica cuántas apuestas deberían recibirse. Las siguientes líneas son cada una de las apuestas que ya llegaron.
+
+Mientras el mensaje no haya terminado, el servidor sigue leyendo. Para decidir si terminó, se fija en dos cosas: por un lado, si el encabezado especifica un número de apuestas, cuenta cuántas líneas que empiezan con BET# se recibieron hasta el momento. Si todavía hay menos que lo indicado, entonces el mensaje está incompleto y continúa leyendo. Por otro lado, aunque se hayan recibido todas las apuestas, también exige que el mensaje decodificado finalice en un salto de línea, porque eso garantiza que no quedó un último BET# cortado a la mitad.
+
+En el momento en que la cantidad de apuestas recibidas coincide con la esperada y el mensaje efectivamente termina en \n, el servidor rompe el loop y devuelve el mensaje completo, ya reconstruido a partir de varios recv si hizo falta.
+
+Para los mensajes que no son de tipo BATCH, por ejemplo el tipo QUERY_WINNERS, son de una sola línea por lo que se detectaría su finalización en el último else y se sale del ciclo. Pero si el "\n" no se encuentra presente en esa línea, se seguirá leyendo.
